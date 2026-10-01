@@ -1,0 +1,18 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qss/default.qss</file>
+        <file>icons/home.svg</file>
+        <file>icons/window.svg</file>
+        <file>icons/plane.svg</file>
+        <file>icons/flame.svg</file>
+        <file>icons/wx-sun.svg</file>
+        <file>icons/wx-moon.svg</file>
+        <file>icons/wx-cloud.svg</file>
+        <file>icons/wx-partly-day.svg</file>
+        <file>icons/wx-partly-night.svg</file>
+        <file>icons/wx-rain.svg</file>
+        <file>icons/wx-snow.svg</file>
+        <file>icons/wx-thunder.svg</file>
+        <file>icons/wx-fog.svg</file>
+    </qresource>
+</RCC>

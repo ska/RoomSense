@@ -1,0 +1,8 @@
+[submodule "ThirdParty/qtmqtt"]
+	path = ThirdParty/qtmqtt
+	url = https://github.com/qt/qtmqtt.git
+	shallow = true
+[submodule "ThirdParty/bluez"]
+	path = ThirdParty/bluez
+	url = https://git.kernel.org/pub/scm/bluetooth/bluez.git
+	shallow = true

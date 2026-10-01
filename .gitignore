@@ -1,0 +1,13 @@
+# Qt Creator user settings
+*.pro.user
+*.pro.user.*
+.qtcreator/
+
+# Build directories
+build/
+build-*/
+
+# Old prebuilt third-party libraries, replaced by the submodules
+ThirdParty/x86_64/
+ThirdParty/Arm32/
+ThirdParty/Arm64/

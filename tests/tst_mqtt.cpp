@@ -1,0 +1,351 @@
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QTest>
+#include "fakebroker.h"
+#include "monoclock.h"
+#include "mqtt.h"
+
+#define TOPIC_SALOTTO   "RoomSense/apartment/salotto/data"
+#define TOPIC_INGRESSO  "RoomSense/apartment/ingresso/data"
+#define TOPIC_STATUS    "RoomSense/status"
+#define CTRL_STATUS     "AcquaThermoNet/status"
+#define SALOTTO_STATE   "AcquaThermoNet/salotto/state_temp"
+#define SALOTTO_SET     "AcquaThermoNet/salotto/set_temp"
+#define MODE_STATE      "AcquaThermoNet/mode/state"
+#define MODE_SET        "AcquaThermoNet/mode/set"
+
+static sensor_env_t reading(int temp, int hum = 48, int batt = 85, int mv = 2950)
+{
+    sensor_env_t e;
+    memset(&e, 0, sizeof(e));
+    e.temp = temp;
+    e.hum = hum;
+    e.batt = batt;
+    e.battmv = mv;
+    e.ldt = 1790000000;
+    return e;
+}
+
+static void addSensor(QVector<sensor_t> &v, const char *mac, const char *zone)
+{
+    sensor_t s;
+    memset(&s, 0, sizeof(s));
+    s.id = v.size();
+    qstrncpy(s.smac, mac, sizeof(s.smac));
+    qstrncpy(s.name, zone, sizeof(s.name));
+    qstrncpy(s.zone, zone, sizeof(s.zone));
+    v.append(s);
+}
+
+static QJsonObject json(const FakeBroker::publish_t &p)
+{
+    return QJsonDocument::fromJson(p.payload).object();
+}
+
+/* Processes events for ms (nothing expected to happen) */
+static void idle(int ms = 300)
+{
+    QTest::qWait(ms);
+}
+
+class TstMqtt : public QObject
+{
+    Q_OBJECT
+
+private:
+    FakeBroker         *m_broker = nullptr;
+    QVector<sensor_t>   m_sensors;
+    mqtt_brk_t          m_mbi;
+    Mqtt               *m_mqtt = nullptr;
+
+    /* Next reading of sensor index, after moving the clock by advanceS */
+    void send(int index, const sensor_env_t &e, int advanceS = 0)
+    {
+        MonoClock::advanceForTest(qint64(advanceS) * 1000);
+        m_mqtt->sensorValueIsChanged(index, e.ldt, e);
+    }
+
+    int count(const char *topic) const { return m_broker->on(topic).size(); }
+
+private slots:
+    void init()
+    {
+        m_broker = new FakeBroker;
+        QVERIFY(m_broker->listen());
+        /* AcquaThermoNet already running: its retained state */
+        m_broker->deliver(CTRL_STATUS, "online", true);
+        m_broker->deliver(SALOTTO_STATE, "20", true);
+        m_broker->deliver("AcquaThermoNet/salotto/state_mode", "heat", true);
+
+        m_sensors.clear();
+        addSensor(m_sensors, "A4:C1:38:00:00:01", "salotto");
+        addSensor(m_sensors, "A4:C1:38:00:00:02", "ingresso");
+        addSensor(m_sensors, "A4:C1:38:00:00:03", "");         /* no zone */
+
+        memset(&m_mbi, 0, sizeof(m_mbi));
+        qstrncpy(m_mbi.address, "127.0.0.1", sizeof(m_mbi.address));
+        m_mbi.port = m_broker->port();
+        qstrncpy(m_mbi.uniqueId, "gw1", sizeof(m_mbi.uniqueId));
+        m_mbi.publishInterval = 60;
+
+        m_mqtt = new Mqtt(&m_mbi, &m_sensors);
+        QTRY_COMPARE(count(TOPIC_STATUS), 1);                  /* online */
+        QTRY_COMPARE(m_broker->subscriptions.size(), 4);
+    }
+
+    void cleanup()
+    {
+        delete m_mqtt;
+        m_mqtt = nullptr;
+        delete m_broker;
+        m_broker = nullptr;
+    }
+
+    void connectAndStatus()
+    {
+        QCOMPARE(m_broker->connects.size(), 1);
+        const FakeBroker::connect_t c = m_broker->connects.first();
+        QCOMPARE(c.clientId, QString("RoomSense-gw1"));
+        QCOMPARE(c.keepAlive, 30);
+        QCOMPARE(c.willTopic, QString(TOPIC_STATUS));
+        QCOMPARE(c.willMessage, QByteArray("offline"));
+        QCOMPARE(c.willQos, 1);
+        QVERIFY(c.willRetain);
+
+        const FakeBroker::publish_t online = m_broker->on(TOPIC_STATUS).first();
+        QCOMPARE(online.payload, QByteArray("online"));
+        QVERIFY(online.retain);
+    }
+
+    void payload()
+    {
+        send(0, reading(204));
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
+        const FakeBroker::publish_t p = m_broker->on(TOPIC_SALOTTO).first();
+        QVERIFY(!p.retain);
+        QCOMPARE(p.qos, 1);
+
+        const QJsonObject o = json(p);
+        QVERIFY(o.value("temperature").isDouble());            /* JSON number */
+        QCOMPARE(o.value("temperature").toDouble(), 20.4);
+        QCOMPARE(o.value("humidity").toInt(), 48);
+        QCOMPARE(o.value("battery").toInt(), 85);
+        QCOMPARE(o.value("battmv").toInt(), 2950);
+        QCOMPARE(o.value("data_time").toVariant().toLongLong(), 1790000000LL);
+        QCOMPARE(o.value("mac").toString(), QString("A4:C1:38:00:00:01"));
+        QCOMPARE(o.keys().size(), 6);
+
+        /* last sent time and counter on the broker acknowledgement */
+        QTRY_COMPARE(m_mqtt->statsSentData().at(0), quint32(1));
+        QVERIFY(m_sensors.at(0).ldst > 0);
+    }
+
+    void negativeTemperature()
+    {
+        send(0, reading(-15));
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
+        QCOMPARE(json(m_broker->on(TOPIC_SALOTTO).first()).value("temperature").toDouble(), -1.5);
+    }
+
+    void unknownOmitted()
+    {
+        send(1, reading(200, 0, 0, 0));
+        QTRY_COMPARE(count(TOPIC_INGRESSO), 1);
+        const QJsonObject o = json(m_broker->on(TOPIC_INGRESSO).first());
+        QVERIFY(o.contains("temperature"));
+        QVERIFY(!o.contains("battery"));
+        QVERIFY(!o.contains("battmv"));
+        QVERIFY(!o.contains("humidity"));
+    }
+
+    void noZoneNotPublished()
+    {
+        send(2, reading(200));
+        idle();
+        QCOMPARE(m_broker->publishes.size(), 1);               /* only online */
+    }
+
+    void rate()
+    {
+        send(0, reading(200));
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
+
+        send(0, reading(200), 5);                              /* same value */
+        send(0, reading(202), 4);                              /* change, 9 s */
+        idle();
+        QCOMPARE(count(TOPIC_SALOTTO), 1);
+
+        send(0, reading(202), 1);                              /* change, 10 s */
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 2);
+        QCOMPARE(json(m_broker->on(TOPIC_SALOTTO).last()).value("temperature").toDouble(), 20.2);
+
+        send(0, reading(202), 59);                             /* no change, 59 s */
+        idle();
+        QCOMPARE(count(TOPIC_SALOTTO), 2);
+
+        send(0, reading(202), 1);                              /* interval, 60 s */
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 3);
+    }
+
+    void zonesIndependent()
+    {
+        send(0, reading(200));
+        send(1, reading(190));
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
+        QTRY_COMPARE(count(TOPIC_INGRESSO), 1);
+    }
+
+    void outOfRange()
+    {
+        send(0, reading(501));
+        send(0, reading(-201));
+        send(0, reading(850));
+        idle();
+        QCOMPARE(count(TOPIC_SALOTTO), 0);
+        QCOMPARE(m_mqtt->statsFiltered().at(0), 3u);           /* counted for the diagnostic page */
+
+        send(0, reading(500));                                 /* limits included */
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
+        QCOMPARE(m_mqtt->statsFiltered().at(0), 3u);
+        QCOMPARE(m_mqtt->statsFiltered().at(1), 0u);
+    }
+
+    void jumpConfirmed()
+    {
+        send(0, reading(180));
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
+
+        send(0, reading(250), 20);                             /* jump 7 degC */
+        send(0, reading(251), 5);                              /* 5 s: too early */
+        idle();
+        QCOMPARE(count(TOPIC_SALOTTO), 1);
+
+        send(0, reading(251), 5);                              /* 10 s, within 0.5 */
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 2);
+        QCOMPARE(m_mqtt->statsFiltered().at(0), 2u);           /* the jump and the early one */
+        QCOMPARE(json(m_broker->on(TOPIC_SALOTTO).last()).value("temperature").toDouble(), 25.1);
+    }
+
+    void jumpNotConfirmed()
+    {
+        send(0, reading(180));
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
+
+        send(0, reading(250), 20);                             /* jump */
+        send(0, reading(320), 15);                             /* another value: new pending */
+        send(0, reading(181), 15);                             /* back: accepted */
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 2);
+        QCOMPARE(json(m_broker->on(TOPIC_SALOTTO).last()).value("temperature").toDouble(), 18.1);
+    }
+
+    void notBufferedWhileDisconnected()
+    {
+        const quint16 port = m_broker->port();
+        m_broker->stop();
+        QTRY_VERIFY(m_mqtt->isDisconnected());
+
+        send(0, reading(200));                                 /* dropped */
+        QVERIFY(m_broker->listen(port));
+        QTRY_COMPARE_WITH_TIMEOUT(m_broker->connects.size(), 2, 5000);  /* backoff 1 s */
+        QTRY_COMPARE(count(TOPIC_STATUS), 2);                  /* online again */
+        idle(1500);
+        QCOMPARE(count(TOPIC_SALOTTO), 0);                     /* nothing sent late */
+
+        send(0, reading(201));
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
+        QCOMPARE(json(m_broker->on(TOPIC_SALOTTO).first()).value("temperature").toDouble(), 20.1);
+    }
+
+    void controllerSubscriptions()
+    {
+        QTRY_COMPARE(m_broker->subscriptions.size(), 4);
+        QVERIFY(m_broker->subscriptions.contains(CTRL_STATUS));
+        QVERIFY(m_broker->subscriptions.contains(MODE_STATE));
+        QVERIFY(m_broker->subscriptions.contains("AcquaThermoNet/+/state_temp"));
+        QVERIFY(m_broker->subscriptions.contains("AcquaThermoNet/+/state_mode"));
+
+        /* the retained state arrives at the subscription */
+        ZoneControl *c = m_mqtt->zoneControl();
+        QTRY_VERIFY(c->canChange(0));
+        QVERIFY(c->controllerOnline());
+        QCOMPARE(c->zone(0).setPoint, 20.0);
+        QVERIFY(c->zone(0).heat);
+        QVERIFY(!c->canChange(1));                     /* ingresso: no state_temp */
+        QVERIFY(!c->canChange(2));                     /* no zone */
+    }
+
+    void setPointRoundTrip()
+    {
+        ZoneControl *c = m_mqtt->zoneControl();
+        QTRY_VERIFY(c->canChange(0));
+        QVERIFY(c->step(0, 1));
+        QVERIFY(c->step(0, 1));
+        QTRY_COMPARE(count(SALOTTO_SET), 1);           /* presses collected: one command */
+        const FakeBroker::publish_t p = m_broker->on(SALOTTO_SET).first();
+        QCOMPARE(p.payload, QByteArray("21"));         /* plain number */
+        QCOMPARE(p.qos, 1);
+        QVERIFY(!p.retain);
+        QVERIFY(c->zone(0).pending);
+
+        m_broker->deliver(SALOTTO_STATE, "21", true);  /* AcquaThermoNet confirms */
+        QTRY_VERIFY(!c->zone(0).pending);
+        QCOMPARE(c->zone(0).setPoint, 21.0);
+    }
+
+    void houseModeRoundTrip()
+    {
+        ZoneControl *c = m_mqtt->zoneControl();
+        QTRY_VERIFY(c->canChange(0));
+        m_broker->deliver(MODE_STATE, R"({"mode":"normal"})", true);
+        QTRY_VERIFY(c->canChangeMode());
+
+        QVERIFY(c->requestMode(ZoneControl::Window));
+        QTRY_COMPARE(count(MODE_SET), 1);
+        const FakeBroker::publish_t p = m_broker->on(MODE_SET).first();
+        QCOMPARE(p.payload, QByteArray("window"));
+        QCOMPARE(p.qos, 1);
+        QVERIFY(!p.retain);
+
+        m_broker->deliver(MODE_STATE, R"({"mode":"window","remaining_s":1800})", true);
+        QTRY_COMPARE(c->houseMode(), ZoneControl::Window);
+        QVERIFY(!c->modePending());
+        QVERIFY(c->remainingS() > 1790);
+        QVERIFY(!c->canChange(0));
+    }
+
+    void noCommandWhenControllerOffline()
+    {
+        ZoneControl *c = m_mqtt->zoneControl();
+        QTRY_VERIFY(c->canChange(0));
+        m_broker->deliver(CTRL_STATUS, "offline", true);
+        QTRY_VERIFY(!c->controllerOnline());
+        QVERIFY(!c->step(0, 1));
+        idle(1500);
+        QCOMPARE(count(SALOTTO_SET), 0);
+    }
+
+    void shutdown()
+    {
+        m_mqtt->shutdown();
+        QTRY_VERIFY(m_mqtt->isDisconnected());
+        QTRY_COMPARE(m_broker->disconnects, 1);                /* clean: no Will */
+        const FakeBroker::publish_t last = m_broker->publishes.last();
+        QCOMPARE(last.topic, QString(TOPIC_STATUS));
+        QCOMPARE(last.payload, QByteArray("offline"));
+        QVERIFY(last.retain);
+
+        idle(2500);                                            /* no reconnect */
+        QCOMPARE(m_broker->connects.size(), 1);
+        send(0, reading(200));
+        idle();
+        QCOMPARE(count(TOPIC_SALOTTO), 0);
+    }
+};
+
+int runMqttTests(int argc, char *argv[])
+{
+    TstMqtt t;
+    return QTest::qExec(&t, argc, argv);
+}
+
+#include "tst_mqtt.moc"

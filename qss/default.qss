@@ -1,0 +1,121 @@
+/* RoomSense panel, 600 x 1024 portrait, dark (mockup "RoomSense GUI") */
+
+QMainWindow, QWidget#mainPage, QWidget#cardsBox, QScrollArea#cardsArea
+                                { background: #15181B; }
+QLabel                          { color: #F3F4F5; font-size: 16px; }
+
+/* header */
+QLabel#clockLabel               { font-size: 80px; font-weight: bold; }
+QLabel#dateLabel                { color: #A3ABB3; font-size: 15px; }
+QLabel#stateName                { color: #A3ABB3; }
+QLabel#stateText                { font-weight: bold; }
+QLabel#stateDot                 { border-radius: 6px; background: #F2555A; }
+QLabel#stateDot[on="true"]      { background: #4FB3A9; }
+QLabel#offlineBanner            { background: #3A2A12; color: #F6C27A; font-size: 17px; padding: 10px 14px; border-radius: 10px; }
+
+/* zone card */
+QFrame#zoneCard                 { background: #22262B; border: 1px solid #2E343A; border-radius: 14px; }
+QFrame#zoneCard[level="stale"]  { border-color: #5A4520; }
+QFrame#zoneCard[level="lost"]   { border-color: #6E2A2C; }
+QFrame#zoneCard QLabel          { background: transparent; }
+QLabel#zoneName                 { font-size: 26px; font-weight: bold; }
+QLabel#tempLabel                { font-size: 56px; font-weight: bold; }
+QLabel#tempLabel[level="lost"], QLabel#tempLabel[level="never"]
+                                { color: #6B737B; }
+QLabel#heatLabel                { color: #7D858D; }
+QLabel#heatLabel[heat="on"]     { color: #F28C28; font-weight: bold; }
+QLabel#heatLabel[heat="nosensor"] { color: #F2555A; }
+QLabel#setPointValue            { font-size: 34px; font-weight: bold; }
+QLabel#setPointLabel            { color: #A3ABB3; font-size: 13px; }
+QLabel#setPointValue[setpoint="pending"], QLabel#setPointLabel[setpoint="pending"]
+                                { color: #7DB7FF; }
+QLabel#setPointValue[setpoint="lastknown"], QLabel#setPointLabel[setpoint="lastknown"],
+QLabel#setPointValue[setpoint="none"], QLabel#setPointValue[setpoint="nozone"]
+                                { color: #7D858D; }
+QLabel#infoLabel, QLabel#battLabel { color: #A3ABB3; }
+QLabel#battLabel[low="true"]    { color: #F2555A; font-weight: bold; }
+QLabel#statusLabel              { color: #A3ABB3; }
+QLabel#statusLabel[level="stale"] { color: #E6A23C; font-weight: bold; }
+QLabel#statusLabel[level="lost"]  { color: #F2555A; font-weight: bold; }
+QLabel#statusLabel[level="never"] { color: #7D858D; }
+QLabel#setPointValue[setpoint="inmode"], QLabel#setPointLabel[setpoint="inmode"]
+                                { color: #7DB7FF; }
+QLabel#setPointValue[setpoint="inboost"], QLabel#setPointLabel[setpoint="inboost"]
+                                { color: #F28C28; }
+QPushButton#stepButton          { background: #343A41; color: #F3F4F5; font-size: 32px; border: none; border-radius: 12px; }
+QPushButton#stepButton:pressed  { background: #4A525B; }
+QPushButton#stepButton:disabled { background: #262A2F; color: #555C63; }
+
+/* house mode: button in the header of the main page, popup */
+QToolButton#houseMode           { background: #22262B; color: #F3F4F5; font-size: 14px; font-weight: bold; border: 1px solid #2E343A; border-radius: 14px; padding: 6px 4px; }
+QToolButton#houseMode:pressed   { background: #2E343A; }
+QToolButton#houseMode[level="window"], QToolButton#houseMode[level="away"]
+                                { background: #1B2A3A; border-color: #7DB7FF; color: #7DB7FF; }
+QToolButton#houseMode[level="boost"]
+                                { background: #3A2412; border-color: #F28C28; color: #F28C28; }
+QToolButton#houseMode[level="pending"], QToolButton#houseMode[level="unknown"]
+                                { color: #A3ABB3; }
+QWidget#modeOverlay             { background: rgba(0, 0, 0, 160); }
+QWidget#modeSheet               { background: #22262B; border-top-left-radius: 18px; border-top-right-radius: 18px; }
+QLabel#modeTitle                { font-size: 24px; font-weight: bold; }
+QLabel#allName                  { font-size: 20px; font-weight: bold; }
+QLabel#allValue                 { font-size: 22px; font-weight: bold; }
+QLabel#modeNote                 { color: #A3ABB3; font-size: 16px; }
+QPushButton#modeClose           { background: #343A41; color: #F3F4F5; font-size: 18px; font-weight: bold; border: none; border-radius: 12px; padding: 0 20px; }
+QPushButton#modeClose:pressed   { background: #4A525B; }
+QToolButton#modeButton          { background: #343A41; color: #F3F4F5; font-size: 18px; font-weight: bold; border: 2px solid #343A41; border-radius: 16px; padding: 12px; }
+QToolButton#modeButton:pressed  { background: #4A525B; }
+QToolButton#modeButton[active="true"] { background: #1B2A3A; border-color: #7DB7FF; color: #7DB7FF; }
+QToolButton#modeButton[active="true"][accessibleName="Boost"]
+                                { background: #3A2412; border-color: #F28C28; color: #F28C28; }
+QToolButton#modeButton:disabled { background: #262A2F; border-color: #262A2F; color: #555C63; }
+
+/* screen saver */
+QWidget#screenSaver             { background: #000000; }
+QLabel#saverClock               { color: #F3F4F5; font-size: 140px; font-weight: bold; }
+QLabel#saverDate                { color: #A3ABB3; font-size: 28px; }
+QLabel#weatherTemp              { color: #F3F4F5; font-size: 48px; font-weight: bold; }
+QLabel#weatherDetails           { color: #A3ABB3; font-size: 18px; }
+QLabel#saverImage               { color: #555C63; font-size: 18px; }
+QLabel#saverLine                { color: #A3ABB3; font-size: 20px; }
+QLabel#saverLine[level="ok"]    { color: #4FB3A9; font-weight: bold; }
+QLabel#saverLine[level="alarm"] { color: #F2555A; font-weight: bold; }
+QFrame#heatChip                 { background: #3A2412; border: 1px solid #F28C28; border-radius: 18px; }
+QFrame#heatChip QLabel          { background: transparent; }
+QLabel#heatName                 { color: #F28C28; font-size: 20px; font-weight: bold; }
+
+/* diagnostic page */
+QWidget#diagPage                { background: #15181B; }
+QPushButton#backButton          { background: #343A41; color: #F3F4F5; font-size: 20px; font-weight: bold; border: none; border-radius: 12px; padding: 0 18px 0 12px; }
+QPushButton#backButton:pressed  { background: #4A525B; }
+QTabWidget#diagTabs::pane       { border: none; }
+QTabBar                         { qproperty-drawBase: 0; }
+QTabBar::tab                    { background: #22262B; color: #A3ABB3; font-size: 18px; font-weight: bold; min-height: 52px; padding: 0 12px; border: none; border-bottom: 3px solid #2E343A; }
+QTabBar::tab:selected           { background: #2A2F35; color: #F3F4F5; border-bottom-color: #4FB3A9; }
+QLabel#diagTitle                { font-size: 26px; font-weight: bold; }
+QLabel#diagVersion              { color: #A3ABB3; font-size: 15px; }
+QFrame#diagBox                  { background: #22262B; border-radius: 14px; }
+QFrame#diagBox QLabel, QFrame#sensorCard QLabel
+                                { background: transparent; }
+QLabel#diagLabel                { color: #A3ABB3; font-size: 16px; }
+QLabel#diagValue                { font-size: 18px; }
+QFrame#diagBox QLabel#diagDot   { border-radius: 4px; background: #4FB3A9; }
+QFrame#diagBox QLabel#diagDot[level="warn"]  { background: #E6A23C; }
+QFrame#diagBox QLabel#diagDot[level="bad"]   { background: #F2555A; }
+QFrame#diagBox QLabel#diagDot[level="muted"] { background: #555C63; }
+QFrame#sensorCard               { background: #22262B; border: 1px solid #2E343A; border-radius: 12px; }
+QFrame#sensorCard[level="stale"] { border-color: #5A4520; }
+QFrame#sensorCard[level="lost"] { border-color: #6E2A2C; }
+QLabel#sensorName               { font-size: 19px; font-weight: bold; }
+QLabel#sensorMac                { color: #A3ABB3; font-family: monospace; font-size: 14px; }
+QLabel#sensorCaption            { color: #A3ABB3; font-size: 14px; }
+QLabel#sensorValue              { font-size: 14px; }
+QLabel#sensorValue[level="stale"], QLabel#sensorValue[dropped="true"]
+                                { color: #E6A23C; }
+QLabel#sensorValue[level="lost"] { color: #F2555A; }
+QLabel#sensorValue[level="never"] { color: #7D858D; }
+QPlainTextEdit#logBox           { background: #0E1012; color: #C9CED3; font-family: monospace; font-size: 13px; border: none; border-radius: 12px; padding: 6px 8px; }
+QScrollBar:vertical             { background: #15181B; width: 8px; }
+QScrollBar::handle:vertical     { background: #343A41; border-radius: 4px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical
+                                { height: 0; }
