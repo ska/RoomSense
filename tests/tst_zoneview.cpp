@@ -215,6 +215,57 @@ private slots:
         QCOMPARE(v.level, QString("pending"));
     }
 
+    void chronoLine_data()
+    {
+        QTest::addColumn<QByteArray>("state");
+        QTest::addColumn<bool>("saving");
+        QTest::addColumn<bool>("online");
+        QTest::addColumn<QString>("text");
+        QTest::addColumn<QString>("level");
+        const QByteArray next = R"({"chrono":"on","manual":false,"next_change":"22:30","next_setpoint":17,"paused":false})";
+        QTest::newRow("next change")    << next << false << true << QString::fromUtf8("22:30 → 17.0°") << "next";
+        QTest::newRow("manual")         << QByteArray(R"({"chrono":"on","manual":true,"next_change":"22:30","next_setpoint":17,"paused":false})")
+                                        << false << true << QString::fromUtf8("manual → 22:30") << "manual";
+        QTest::newRow("paused (away)")  << QByteArray(R"({"chrono":"on","manual":false,"next_change":"22:30","next_setpoint":17,"paused":true})")
+                                        << false << true << "chrono paused" << "paused";
+        QTest::newRow("no clock")       << QByteArray(R"({"chrono":"on","manual":false,"paused":false})")
+                                        << false << true << "chrono on" << "next";
+        QTest::newRow("off")            << QByteArray(R"({"chrono":"off"})") << false << true << "chrono off" << "off";
+        QTest::newRow("saving")         << next << true << true << QString::fromUtf8("saving…") << "saving";
+        QTest::newRow("last known")     << next << false << false << QString::fromUtf8("22:30 → 17.0°") << "lastknown";
+    }
+
+    void chronoLine()
+    {
+        QFETCH(QByteArray, state);
+        QFETCH(bool, saving);
+        QFETCH(bool, online);
+        QFETCH(QString, text);
+        QFETCH(QString, level);
+        chrono_input_t in;
+        QVERIFY(Chrono::parseState(state, in.chrono.state));
+        in.chrono.hasState = true;
+        in.chrono.saving = saving;
+        in.controllerOnline = online;
+        chrono_view_t v = ZoneView::chronoLine(in);
+        QVERIFY(v.shown);
+        QVERIFY(!v.tappable);                           /* no program */
+        in.chrono.hasProgram = true;
+        QVERIFY(ZoneView::chronoLine(in).tappable);
+        QCOMPARE(v.text, text);
+        QCOMPARE(v.level, level);
+    }
+
+    void chronoLineHidden()
+    {
+        chrono_input_t in;
+        in.controllerOnline = true;
+        QVERIFY(!ZoneView::chronoLine(in).shown);       /* no state from the controller */
+        in.chrono.hasState = true;
+        in.hasZone = false;
+        QVERIFY(!ZoneView::chronoLine(in).shown);
+    }
+
     void age()
     {
         QCOMPARE(ZoneView::age(0), QString("0 s"));

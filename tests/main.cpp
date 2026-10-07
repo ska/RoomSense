@@ -3,6 +3,9 @@
 #include <cstdio>
 
 int runBleParseTests(int argc, char *argv[]);
+int runChronoTests(int argc, char *argv[]);
+int runChronoPageTests(int argc, char *argv[]);
+int runChronoEditorTests(int argc, char *argv[]);
 int runConfigTests(int argc, char *argv[]);
 int runFakeScenarioTests(int argc, char *argv[]);
 int runMqttTests(int argc, char *argv[]);
@@ -33,11 +36,14 @@ int main(int argc, char *argv[])
     failed += runSingleInstanceTests(argc, argv);
     failed += runWatchDogTests(argc, argv);
     failed += runZoneControlTests(argc, argv);
+    failed += runChronoTests(argc, argv);
     failed += runZoneViewTests(argc, argv);
     failed += runDiagViewTests(argc, argv);
     failed += runDiagPageTests(argc, argv);
     failed += runMainPageTests(argc, argv);
     failed += runMainWindowTests(argc, argv);
+    failed += runChronoPageTests(argc, argv);
+    failed += runChronoEditorTests(argc, argv);
     failed += runScreenSaverTests(argc, argv);
     failed += runWeatherTests(argc, argv);
     /* Last: installs the file log handler for the rest of the process */

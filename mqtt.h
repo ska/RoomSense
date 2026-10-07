@@ -8,7 +8,7 @@
 /*
  * Sensor gateway side of the AcquaThermoNet MQTT interface
  * (HA_Hmi_Relay docs/SENSOR_GATEWAY_INTERFACE.md): one reading per zone on
- * RoomSense/apartment/<zone>/data, only real and plausible new readings,
+ * RoomSense/<zone>/data, only real and plausible new readings,
  * nothing for a zone whose sensor is no longer heard. One sensor per zone.
  * Panel setpoints (§7): the AcquaThermoNet status, state_temp and
  * state_mode topics feed ZoneControl, its commands go out on set_temp;
@@ -54,6 +54,8 @@ private slots:
     void messageReceivedSlot(const QByteArray &message, const QMqttTopicName &topic);
     void publishSetPoint(const QString &zone, double value);
     void publishMode(const QString &mode);
+    void publishChronoOn(const QString &zone, bool on);
+    void publishChronoProgram(const QString &zone, const QByteArray &payload);
 
 private:
     /* Last accepted reading of a sensor */
@@ -65,7 +67,7 @@ private:
         quint8   hum = 0;
         quint8   batt = 0;
         quint16  battmv = 0;
-        /*jump waiting for confirmation*/
+        /*reading waiting for confirmation: a jump, or the first one*/
         bool     pending = false;
         qint64   pendingTime = 0;
         qint16   pendingTemp = 0;
@@ -78,8 +80,12 @@ private:
         int      temp = 0;          /*0.1 degC*/
     } zone_pub_t;
 
+    /* Plausibility of a reading: Confirming (first one, or after a silence:
+     * nothing to compare with) is not counted as filtered */
+    enum Verdict { Accepted, Confirming, Filtered };
+
     void scheduleReconnect();
-    bool acceptReading(int index, const sensor_env_t &data);
+    Verdict acceptReading(int index, const sensor_env_t &data);
     void publishZone(int index);
     qint64 monoSecs() const;
 

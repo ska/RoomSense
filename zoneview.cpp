@@ -132,3 +132,49 @@ ZoneView::mode_view_t ZoneView::modeButton(const mode_input_t &in)
     }
     return v;
 }
+
+ZoneView::chrono_view_t ZoneView::chronoLine(const chrono_input_t &in)
+{
+    chrono_view_t v;
+    if(!in.hasZone || !in.chrono.hasState)
+        return v;
+    v.shown = true;
+    v.tappable = in.chrono.hasProgram;
+    const ChronoState &s = in.chrono.state;
+    if(in.chrono.saving)
+    {
+        v.text = QString::fromUtf8("saving…");
+        v.level = "saving";
+        return v;
+    }
+    if(!s.on)
+    {
+        v.text = "chrono off";
+        v.level = "off";
+    }
+    else if(s.paused)
+    {
+        v.text = "chrono paused";
+        v.level = "paused";
+    }
+    else if(!s.hasNext)
+    {
+        /* the controller clock is not set */
+        v.text = "chrono on";
+        v.level = "next";
+    }
+    else if(s.manual)
+    {
+        v.text = QString::fromUtf8("manual → ") + s.nextChange;
+        v.level = "manual";
+    }
+    else
+    {
+        v.text = s.nextChange + QString::fromUtf8(" → ") + QString::number(s.nextSetpoint, 'f', 1) + QString::fromUtf8("°");
+        v.level = "next";
+    }
+    /* the last state known: grey, as the setpoints */
+    if(!in.controllerOnline)
+        v.level = "lastknown";
+    return v;
+}

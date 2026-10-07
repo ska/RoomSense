@@ -60,6 +60,11 @@ equals(RS_BLE, true) {
 
 SOURCES += \
     $$RS_SRC/bleparse.cpp \
+    $$RS_SRC/chrono.cpp \
+    $$RS_SRC/chronoeditor.cpp \
+    $$RS_SRC/chronopage.cpp \
+    $$RS_SRC/chronoview.cpp \
+    $$RS_SRC/daychart.cpp \
     $$RS_SRC/configfile.cpp \
     $$RS_SRC/diagpage.cpp \
     $$RS_SRC/diagview.cpp \
@@ -84,6 +89,11 @@ SOURCES += \
 HEADERS += \
     $$RS_SRC/bleparse.h \
     $$RS_SRC/blestatus.h \
+    $$RS_SRC/chrono.h \
+    $$RS_SRC/chronoeditor.h \
+    $$RS_SRC/chronopage.h \
+    $$RS_SRC/chronoview.h \
+    $$RS_SRC/daychart.h \
     $$RS_SRC/configfile.h \
     $$RS_SRC/diagpage.h \
     $$RS_SRC/diagview.h \

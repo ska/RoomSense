@@ -57,7 +57,7 @@ e2e_test_2\\name=e2e_test_2
 EOF2
 chmod 600 setting.ini
 
-python3 "$TOOLS/mqttsub.py" "$HOST" "$PORT" "$USER_NAME" 25 'RoomSense/status' 'RoomSense/apartment/e2e_test_1/data' 'RoomSense/apartment/e2e_test_2/data' > sub.log 2> sub.err & SUB=$!
+python3 "$TOOLS/mqttsub.py" "$HOST" "$PORT" "$USER_NAME" 25 'RoomSense/status' 'RoomSense/e2e_test_1/data' 'RoomSense/e2e_test_2/data' > sub.log 2> sub.err & SUB=$!
 PIDS+=($SUB)
 sleep 2
 "$RS" > app.log 2>&1 & RS_PID=$!
@@ -70,9 +70,9 @@ wait $SUB
 if [ -s sub.err ]; then echo "FAIL  subscriber: $(cat sub.err)"; FAILS=$((FAILS+1)); else echo "PASS  subscriber connected"; fi
 check "RoomSense connected"             app.log  'MQTT client connected to broker'
 check "RoomSense/status online"         sub.log  "${T}RoomSense/status online"
-check "e2e_test_1 reading delivered"    sub.log  "${T}RoomSense/apartment/e2e_test_1/data \{.*\"temperature\":"
-check "e2e_test_2 reading delivered"    sub.log  "${T}RoomSense/apartment/e2e_test_2/data \{.*\"temperature\":"
-check_not "readings not retained"       sub.log  "${T}RoomSense/apartment/[^ ]+ .* \[R\]$"
+check "e2e_test_1 reading delivered"    sub.log  "${T}RoomSense/e2e_test_1/data \{.*\"temperature\":"
+check "e2e_test_2 reading delivered"    sub.log  "${T}RoomSense/e2e_test_2/data \{.*\"temperature\":"
+check_not "readings not retained"       sub.log  "${T}RoomSense/[^ /]+/data .* \[R\]$"
 check "RoomSense/status offline"        sub.log  "${T}RoomSense/status offline"
 if [ $RC -eq 0 ]; then echo "PASS  RoomSense exit code 0"; else echo "FAIL  RoomSense exit code $RC"; FAILS=$((FAILS+1)); fi
 if [ -n "${MQTT_PASSWORD:-}" ] && grep -qF "$MQTT_PASSWORD" app.log; then echo "FAIL  password in the log"; FAILS=$((FAILS+1)); else echo "PASS  password not in the log"; fi

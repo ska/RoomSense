@@ -8,6 +8,8 @@
 #endif
 
 class BleStatus;
+class ChronoEditor;
+class ChronoPage;
 class DiagPage;
 class MainPage;
 class QStackedWidget;
@@ -40,6 +42,8 @@ public slots:
     void showWindow();
     void showMainPage();
     void showDiagnosticPage();
+    void showChronoPage(int zone);
+    void showChronoEditor(int zone);
     void showScreenSaver();
     /* A new reading of sensor index, for both pages */
     void onReading(int index, unsigned time, sensor_env_t data);
@@ -49,6 +53,8 @@ private:
     QStackedWidget  *m_stack;
     MainPage        *m_mainPage;
     DiagPage        *m_diagPage;
+    ChronoPage      *m_chronoPage;
+    ChronoEditor    *m_chronoEditor;
     ScreenSaver     *m_saver;
     QTimer          *m_idleTimer;
 

@@ -90,6 +90,10 @@ MainPage::MainPage(const QVector<sensor_t> &sensors, ZoneControl *control, QWidg
         ZoneCard *card = new ZoneCard(name.isEmpty() ? zone : name, cardsBox);
         connect(card, &ZoneCard::minusClicked, this, [this, i] { m_control->step(i, -1); });
         connect(card, &ZoneCard::plusClicked, this, [this, i] { m_control->step(i, 1); });
+        connect(card, &ZoneCard::chronoClicked, this, [this, i] {
+            if(m_control->chrono(i).hasProgram)
+                emit chronoRequested(i);
+        });
         cards->addWidget(card);
         m_cards.append(card);
     }
@@ -114,6 +118,7 @@ MainPage::MainPage(const QVector<sensor_t> &sensors, ZoneControl *control, QWidg
     connect(m_control, &ZoneControl::houseModeChanged, this, &MainPage::refreshModeButton);
 
     connect(m_control, &ZoneControl::zoneChanged, this, &MainPage::refreshCard);
+    connect(m_control, &ZoneControl::chronoChanged, this, &MainPage::refreshCard);
     connect(m_control, &ZoneControl::controllerOnlineChanged, this, &MainPage::refresh);
     QTimer *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &MainPage::refresh);
@@ -197,4 +202,10 @@ void MainPage::refreshCard(int index)
     in.controllerOnline = m_control->controllerOnline();
     in.houseMode = m_control->houseMode();
     m_cards.at(index)->display(ZoneView::make(in), m_control->canChange(index));
+
+    ZoneView::chrono_input_t ci;
+    ci.hasZone = in.hasZone;
+    ci.chrono = m_control->chrono(index);
+    ci.controllerOnline = in.controllerOnline;
+    m_cards.at(index)->displayChrono(ZoneView::chronoLine(ci));
 }

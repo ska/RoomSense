@@ -67,6 +67,22 @@ namespace ZoneView
 
     mode_view_t modeButton(const mode_input_t &in);
 
+    /* Chrono line of a zone card (AcquaThermoNet <zone>/chrono, §9) */
+    typedef struct {
+        bool    hasZone = true;
+        ZoneControl::chrono_t chrono;
+        bool    controllerOnline = false;
+    } chrono_input_t;
+
+    typedef struct {
+        bool    shown = false;          /*no chrono state known: hidden*/
+        QString text;                   /*"22:30 → 17.0°", "manual → 22:30", "chrono off", ...*/
+        QString level;                  /*stylesheet: next, manual, paused, off, saving, lastknown*/
+        bool    tappable = false;       /*a program is known: the chrono page can open*/
+    } chrono_view_t;
+
+    chrono_view_t chronoLine(const chrono_input_t &in);
+
     /* "30 s", "7 min", "3 h" */
     QString age(qint64 seconds);
 }

@@ -121,20 +121,23 @@ sleep 3
 
 echo "--- RoomSense publishes, AcquaThermoNet accepts"
 # RS_FAKE sensor index: [SENSORS] groups in alphabetical order, camera=0 salotto=1
-# salotto: a spike at 4 s and an out of range reading at 8 s
-(cd rs && RS_FAKE="spike=1@4:+80;out=1@8:850" exec "$RS" > app.log 2>&1) & RS_PID=$!
-wait_for broker.log "${T}RoomSense/apartment/salotto/data " 10
-wait_for broker.log "${T}RoomSense/apartment/camera/data " 10
-wait_for rs/log/RoomSense.log 'out of range, dropped' 15
+# salotto: a spike at 20 s and an out of range reading at 24 s, after the
+# first reading confirmed (about 10 s)
+(cd rs && RS_FAKE="spike=1@20:+80;out=1@24:850" exec "$RS" > app.log 2>&1) & RS_PID=$!
+wait_for broker.log "${T}RoomSense/salotto/data " 20
+wait_for broker.log "${T}RoomSense/camera/data " 20
+wait_for rs/log/RoomSense.log 'out of range, dropped' 30
 check "client id RoomSense-e2e"         rs/log/RoomSense.log 'MQTT client id: +"RoomSense-e2e"'
 check "RoomSense/status online"         broker.log "${T}RoomSense/status online \[R\]"
-check "salotto reading, JSON number"    broker.log "${T}RoomSense/apartment/salotto/data \{.*\"temperature\":-?[0-9]+(\.[0-9])?[,}]"
-check "camera reading"                  broker.log "${T}RoomSense/apartment/camera/data \{.*\"mac\":\"A4:C1:38:00:00:02\""
-check_not "readings not retained"       broker.log "${T}RoomSense/apartment/[^ ]+ .* \[R\]$"
+check "salotto reading, JSON number"    broker.log "${T}RoomSense/salotto/data \{.*\"temperature\":-?[0-9]+(\.[0-9])?[,}]"
+check "camera reading"                  broker.log "${T}RoomSense/camera/data \{.*\"mac\":\"A4:C1:38:00:00:02\""
+check_not "readings not retained"       broker.log "${T}RoomSense/[^ /]+/data .* \[R\]$"
 check_not "no invalid sensor data"      atn/app.log 'Invalid sensor data'
+check "first reading confirmed first"   rs/log/RoomSense.log 'Sensor salotto: first reading .* waiting for confirmation'
+check "AcquaThermoNet: RoomSense online" atn/app.log 'RoomSense gateway online'
 check "spike waits for confirmation"    rs/log/RoomSense.log 'Sensor salotto: jump .* waiting for confirmation'
 check "85.0 dropped"                    rs/log/RoomSense.log 'Sensor salotto: temperature 85 out of range, dropped'
-check_not "spike and 85.0 not published" broker.log "${T}RoomSense/apartment/salotto/data .*\"temperature\":(2[5-9]|[3-9][0-9])"
+check_not "spike and 85.0 not published" broker.log "${T}RoomSense/salotto/data .*\"temperature\":(2[5-9]|[3-9][0-9])"
 
 echo "--- RoomSense stopped: offline, then sensor lost"
 kill -TERM $RS_PID
@@ -142,6 +145,8 @@ wait $RS_PID
 RS_RC=$?
 if [ $RS_RC -eq 0 ]; then echo "PASS  RoomSense exit code 0"; else echo "FAIL  RoomSense exit code $RS_RC"; FAILS=$((FAILS+1)); fi
 check "RoomSense/status offline"        broker.log "${T}RoomSense/status offline \[R\]"
+wait_for atn/app.log 'RoomSense gateway offline' 5
+check "AcquaThermoNet: RoomSense offline" atn/app.log 'RoomSense gateway offline'
 wait_for atn/app.log 'Sensor timeout zone "camera"' $((TIMEOUT_S + CHECK_S + 10))
 wait_for atn/app.log 'Sensor timeout zone "salotto"' 5
 check "salotto: lost after data, OFF"   atn/app.log 'Sensor timeout zone "salotto" last data .* zone OFF'
@@ -149,9 +154,9 @@ check "camera: lost after data, OFF"    atn/app.log 'Sensor timeout zone "camera
 
 echo "--- RoomSense back, camera lost while running, setpoint of salotto changed on the panel,"
 echo "    then windows open, boost and back to normal from the house mode popup"
-(cd rs && RS_FAKE="lost=0@6;press=1@8:+2;mode=window@14;mode=normal@20;mode=boost@24;mode=normal@28" exec "$RS" > app2.log 2>&1) & RS_PID=$!
-wait_for atn/app.log 'Sensor back zone "salotto"' 15
-wait_for atn/app.log 'Sensor back zone "camera"' 15
+(cd rs && RS_FAKE="lost=0@16;press=1@8:+2;mode=window@14;mode=normal@20;mode=boost@24;mode=normal@28" exec "$RS" > app2.log 2>&1) & RS_PID=$!
+wait_for atn/app.log 'Sensor back zone "salotto"' 25
+wait_for atn/app.log 'Sensor back zone "camera"' 25
 check "salotto: sensor back"            atn/app.log 'Sensor back zone "salotto"'
 check "camera: sensor back"             atn/app.log 'Sensor back zone "camera"'
 wait_for broker.log "${T}AcquaThermoNet/salotto/state_temp 21 " 15

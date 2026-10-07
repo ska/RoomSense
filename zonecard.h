@@ -23,13 +23,17 @@ public:
     explicit ZoneCard(const QString &name, QWidget *parent = nullptr);
 
     void display(const ZoneView::view_t &v, bool canChange);
+    void displayChrono(const ZoneView::chrono_view_t &v);
 
 signals:
     void minusClicked();
     void plusClicked();
+    /* the chrono line, a button when the chrono page can open */
+    void chronoClicked();
 
 private:
     QLabel      *m_name;
+    QPushButton *m_chrono;
     QLabel      *m_heat;
     QLabel      *m_temp;
     QLabel      *m_setPoint;

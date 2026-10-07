@@ -1,18 +1,24 @@
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSignalSpy>
 #include <QTest>
 #include "fakebroker.h"
 #include "monoclock.h"
 #include "mqtt.h"
 
-#define TOPIC_SALOTTO   "RoomSense/apartment/salotto/data"
-#define TOPIC_INGRESSO  "RoomSense/apartment/ingresso/data"
+#define TOPIC_SALOTTO   "RoomSense/salotto/data"
+#define TOPIC_INGRESSO  "RoomSense/ingresso/data"
 #define TOPIC_STATUS    "RoomSense/status"
 #define CTRL_STATUS     "AcquaThermoNet/status"
 #define SALOTTO_STATE   "AcquaThermoNet/salotto/state_temp"
 #define SALOTTO_SET     "AcquaThermoNet/salotto/set_temp"
 #define MODE_STATE      "AcquaThermoNet/mode/state"
 #define MODE_SET        "AcquaThermoNet/mode/set"
+#define SALOTTO_CHRONO  "AcquaThermoNet/salotto/chrono"
+#define SALOTTO_PROFILE "AcquaThermoNet/salotto/chrono/profile"
+#define SALOTTO_CHRONO_SET  "AcquaThermoNet/salotto/chrono/set"
+#define SALOTTO_PROFILE_SET "AcquaThermoNet/salotto/chrono/profile/set"
+#define PROGRAM_OFF     R"({"edited":false,"enabled":false,"holiday":[],"holiday_days":[6,7],"weekday":[{"at":"06:30","temp":20.5}]})"
 
 static sensor_env_t reading(int temp, int hum = 48, int batt = 85, int mv = 2950)
 {
@@ -65,6 +71,14 @@ private:
         m_mqtt->sensorValueIsChanged(index, e.ldt, e);
     }
 
+    /* First reading of a sensor: published once a later one, 10 s after
+     * and within 0.5 degC, confirms it */
+    void first(int index, const sensor_env_t &e)
+    {
+        send(index, e);
+        send(index, e, 10);
+    }
+
     int count(const char *topic) const { return m_broker->on(topic).size(); }
 
 private slots:
@@ -90,7 +104,7 @@ private slots:
 
         m_mqtt = new Mqtt(&m_mbi, &m_sensors);
         QTRY_COMPARE(count(TOPIC_STATUS), 1);                  /* online */
-        QTRY_COMPARE(m_broker->subscriptions.size(), 4);
+        QTRY_COMPARE(m_broker->subscriptions.size(), 6);
     }
 
     void cleanup()
@@ -119,7 +133,7 @@ private slots:
 
     void payload()
     {
-        send(0, reading(204));
+        first(0, reading(204));
         QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
         const FakeBroker::publish_t p = m_broker->on(TOPIC_SALOTTO).first();
         QVERIFY(!p.retain);
@@ -142,14 +156,14 @@ private slots:
 
     void negativeTemperature()
     {
-        send(0, reading(-15));
+        first(0, reading(-15));
         QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
         QCOMPARE(json(m_broker->on(TOPIC_SALOTTO).first()).value("temperature").toDouble(), -1.5);
     }
 
     void unknownOmitted()
     {
-        send(1, reading(200, 0, 0, 0));
+        first(1, reading(200, 0, 0, 0));
         QTRY_COMPARE(count(TOPIC_INGRESSO), 1);
         const QJsonObject o = json(m_broker->on(TOPIC_INGRESSO).first());
         QVERIFY(o.contains("temperature"));
@@ -167,7 +181,7 @@ private slots:
 
     void rate()
     {
-        send(0, reading(200));
+        first(0, reading(200));
         QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
 
         send(0, reading(200), 5);                              /* same value */
@@ -189,8 +203,8 @@ private slots:
 
     void zonesIndependent()
     {
-        send(0, reading(200));
-        send(1, reading(190));
+        first(0, reading(200));
+        first(1, reading(190));
         QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
         QTRY_COMPARE(count(TOPIC_INGRESSO), 1);
     }
@@ -204,7 +218,7 @@ private slots:
         QCOMPARE(count(TOPIC_SALOTTO), 0);
         QCOMPARE(m_mqtt->statsFiltered().at(0), 3u);           /* counted for the diagnostic page */
 
-        send(0, reading(500));                                 /* limits included */
+        first(0, reading(500));                                /* limits included */
         QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
         QCOMPARE(m_mqtt->statsFiltered().at(0), 3u);
         QCOMPARE(m_mqtt->statsFiltered().at(1), 0u);
@@ -212,7 +226,7 @@ private slots:
 
     void jumpConfirmed()
     {
-        send(0, reading(180));
+        first(0, reading(180));
         QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
 
         send(0, reading(250), 20);                             /* jump 7 degC */
@@ -228,7 +242,7 @@ private slots:
 
     void jumpNotConfirmed()
     {
-        send(0, reading(180));
+        first(0, reading(180));
         QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
 
         send(0, reading(250), 20);                             /* jump */
@@ -236,6 +250,46 @@ private slots:
         send(0, reading(181), 15);                             /* back: accepted */
         QTRY_COMPARE(count(TOPIC_SALOTTO), 2);
         QCOMPARE(json(m_broker->on(TOPIC_SALOTTO).last()).value("temperature").toDouble(), 18.1);
+    }
+
+    void firstReadingConfirmed()
+    {
+        send(0, reading(200));
+        send(0, reading(201), 5);                              /* too early */
+        idle();
+        QCOMPARE(count(TOPIC_SALOTTO), 0);
+
+        send(0, reading(202), 5);                              /* 10 s, within 0.5 */
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
+        QCOMPARE(json(m_broker->on(TOPIC_SALOTTO).first()).value("temperature").toDouble(), 20.2);
+        QCOMPARE(m_mqtt->statsFiltered().at(0), 0u);           /* waiting is not filtering */
+    }
+
+    void firstReadingNotConfirmed()
+    {
+        send(0, reading(450));                                 /* plausible, but wrong */
+        send(0, reading(200), 10);                             /* not confirmed: new pending */
+        idle();
+        QCOMPARE(count(TOPIC_SALOTTO), 0);
+
+        send(0, reading(201), 10);
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
+        QCOMPARE(json(m_broker->on(TOPIC_SALOTTO).first()).value("temperature").toDouble(), 20.1);
+    }
+
+    void confirmationAfterSilence()
+    {
+        first(0, reading(200));
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
+
+        send(0, reading(450), 301);                            /* nothing recent to compare with */
+        send(0, reading(201), 10);                             /* new pending */
+        idle();
+        QCOMPARE(count(TOPIC_SALOTTO), 1);
+
+        send(0, reading(201), 10);
+        QTRY_COMPARE(count(TOPIC_SALOTTO), 2);
+        QCOMPARE(json(m_broker->on(TOPIC_SALOTTO).last()).value("temperature").toDouble(), 20.1);
     }
 
     void notBufferedWhileDisconnected()
@@ -251,18 +305,20 @@ private slots:
         idle(1500);
         QCOMPARE(count(TOPIC_SALOTTO), 0);                     /* nothing sent late */
 
-        send(0, reading(201));
+        first(0, reading(201));
         QTRY_COMPARE(count(TOPIC_SALOTTO), 1);
         QCOMPARE(json(m_broker->on(TOPIC_SALOTTO).first()).value("temperature").toDouble(), 20.1);
     }
 
     void controllerSubscriptions()
     {
-        QTRY_COMPARE(m_broker->subscriptions.size(), 4);
+        QTRY_COMPARE(m_broker->subscriptions.size(), 6);
         QVERIFY(m_broker->subscriptions.contains(CTRL_STATUS));
         QVERIFY(m_broker->subscriptions.contains(MODE_STATE));
         QVERIFY(m_broker->subscriptions.contains("AcquaThermoNet/+/state_temp"));
         QVERIFY(m_broker->subscriptions.contains("AcquaThermoNet/+/state_mode"));
+        QVERIFY(m_broker->subscriptions.contains("AcquaThermoNet/+/chrono"));
+        QVERIFY(m_broker->subscriptions.contains("AcquaThermoNet/+/chrono/profile"));
 
         /* the retained state arrives at the subscription */
         ZoneControl *c = m_mqtt->zoneControl();
@@ -311,6 +367,56 @@ private slots:
         QVERIFY(!c->modePending());
         QVERIFY(c->remainingS() > 1790);
         QVERIFY(!c->canChange(0));
+    }
+
+    void chronoRoundTrip()
+    {
+        ZoneControl *c = m_mqtt->zoneControl();
+        m_broker->deliver(SALOTTO_CHRONO, R"({"chrono":"off"})", true);
+        m_broker->deliver(SALOTTO_PROFILE, PROGRAM_OFF, true);
+        QTRY_VERIFY(c->canChangeChrono(0));
+        QVERIFY(c->chrono(0).hasState);
+        QVERIFY(!c->chrono(0).state.on);
+        QCOMPARE(c->chrono(0).program.weekday.size(), 1);
+        QVERIFY(!c->canChangeChrono(1));               /* ingresso: no program */
+
+        /* on/off: answered by the chrono state */
+        QSignalSpy result(c, &ZoneControl::chronoResult);
+        QVERIFY(c->setChronoOn(0, true));
+        QTRY_COMPARE(count(SALOTTO_CHRONO_SET), 1);
+        FakeBroker::publish_t p = m_broker->on(SALOTTO_CHRONO_SET).first();
+        QCOMPARE(p.payload, QByteArray("on"));
+        QCOMPARE(p.qos, 1);
+        QVERIFY(!p.retain);
+        m_broker->deliver(SALOTTO_CHRONO, R"({"chrono":"on","manual":false,"next_change":"06:30","next_setpoint":20.5,"paused":false,"profile":"weekday"})", true);
+        QTRY_COMPARE(result.count(), 1);
+        QCOMPARE(result.at(0).at(1).value<ZoneControl::ChronoResult>(), ZoneControl::ChronoSaved);
+        QCOMPARE(c->chrono(0).state.nextChange, QString("06:30"));
+
+        /* a program: answered by the program */
+        ChronoConfig prog = c->chrono(0).program;
+        prog.enabled = true;
+        prog.weekday.append({ QTime(22, 30), 17 });
+        QVERIFY(c->saveProgram(0, prog));
+        QTRY_COMPARE(count(SALOTTO_PROFILE_SET), 1);
+        p = m_broker->on(SALOTTO_PROFILE_SET).first();
+        QCOMPARE(p.payload, Chrono::programCommand(prog));
+        QCOMPARE(p.qos, 1);
+        QVERIFY(!p.retain);
+        m_broker->deliver(SALOTTO_PROFILE, R"({"edited":true,"enabled":true,"holiday":[],"holiday_days":[6,7],)"
+                                           R"("weekday":[{"at":"06:30","temp":20.5},{"at":"22:30","temp":17}]})", true);
+        QTRY_COMPARE(result.count(), 2);
+        QCOMPARE(result.at(1).at(1).value<ZoneControl::ChronoResult>(), ZoneControl::ChronoSaved);
+        QVERIFY(c->chrono(0).program.edited);
+
+        /* reset */
+        QVERIFY(c->resetProgram(0));
+        QTRY_COMPARE(count(SALOTTO_PROFILE_SET), 2);
+        QCOMPARE(m_broker->on(SALOTTO_PROFILE_SET).last().payload, QByteArray(R"({"reset":true})"));
+        m_broker->deliver(SALOTTO_PROFILE, PROGRAM_OFF, true);
+        QTRY_COMPARE(result.count(), 3);
+        QCOMPARE(result.at(2).at(1).value<ZoneControl::ChronoResult>(), ZoneControl::ChronoSaved);
+        QVERIFY(!c->chrono(0).program.edited);
     }
 
     void noCommandWhenControllerOffline()

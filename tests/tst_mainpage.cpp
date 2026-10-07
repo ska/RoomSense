@@ -52,6 +52,21 @@ private slots:
         delete m_control;
     }
 
+    void chronoLine()
+    {
+        QPushButton *line = m_page->card(0)->findChild<QPushButton *>("chronoButton");
+        QVERIFY(line->isHidden());                      /* no chrono state yet */
+        m_control->onChronoState("salotto", R"({"chrono":"on","manual":true,"next_change":"22:30","next_setpoint":17,"paused":false})");
+        QVERIFY(line->isVisible());
+        QCOMPARE(line->text(), QString::fromUtf8("manual → 22:30"));
+        QCOMPARE(line->property("chrono").toString(), QString("manual"));
+        QVERIFY(!line->isEnabled());                    /* no program: no page */
+        m_control->onChronoProgram("salotto", R"({"edited":false,"enabled":true,"holiday":[],"holiday_days":[],"weekday":[{"at":"22:30","temp":17}]})");
+        QVERIFY(line->isEnabled());
+        QCOMPARE(line->text(), QString::fromUtf8("manual → 22:30  ›"));
+        QVERIFY(m_page->card(1)->findChild<QPushButton *>("chronoButton")->isHidden());
+    }
+
     void reading()
     {
         QCOMPARE(text(0, "tempLabel"), QString("--.-°"));

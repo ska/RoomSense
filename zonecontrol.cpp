@@ -23,8 +23,14 @@ ZoneControl::ZoneControl(const QStringList &zones, int commandDelayMs, int confi
     m_remainingS(0),
     m_modeAtMs(0),
     m_modePending(false),
-    m_pendingMode(Normal)
+    m_pendingMode(Normal),
+    m_chrono(zones.size()),
+    m_chronoWait(zones.size(), WaitNone),
+    m_chronoOn(zones.size(), false),
+    m_chronoSent(zones.size())
 {
+    /* signal argument: also for QSignalSpy and queued connections */
+    qRegisterMetaType<ZoneControl::ChronoResult>();
     m_modeTimer = new QTimer(this);
     m_modeTimer->setSingleShot(true);
     m_modeTimer->setInterval(confirmTimeoutMs);
@@ -47,6 +53,12 @@ ZoneControl::ZoneControl(const QStringList &zones, int commandDelayMs, int confi
         t->setInterval(confirmTimeoutMs);
         connect(t, &QTimer::timeout, this, [this, i] { confirmTimeout(i); });
         m_confirmTimers.append(t);
+
+        t = new QTimer(this);
+        t->setSingleShot(true);
+        t->setInterval(confirmTimeoutMs);
+        connect(t, &QTimer::timeout, this, [this, i] { endSaving(i, ChronoNotConfirmed); });
+        m_chronoTimers.append(t);
     }
 }
 
@@ -268,6 +280,11 @@ void ZoneControl::updateOnline(bool wasOnline)
     if(!online)
     {
         cancelAllPending();
+        for(int i = 0; i < m_chrono.size(); i++)
+        {
+            if(m_chrono.at(i).saving)
+                endSaving(i, ChronoNotConfirmed);
+        }
         if(m_modePending)
         {
             m_modePending = false;
@@ -323,4 +340,115 @@ void ZoneControl::onStateMode(const QString &zone, const QByteArray &payload)
     z.hasHeat = true;
     z.heat = (payload == "heat");
     emit zoneChanged(i);
+}
+
+bool ZoneControl::canChangeChrono(int index) const
+{
+    return index >= 0 && index < m_zones.size() && !m_zones.at(index).isEmpty()
+            && controllerOnline() && m_chrono.at(index).hasProgram && !m_chrono.at(index).saving;
+}
+
+bool ZoneControl::startSaving(int index, ChronoWait wait)
+{
+    if(!canChangeChrono(index))
+        return false;
+    m_chrono[index].saving = true;
+    m_chronoWait[index] = wait;
+    m_chronoTimers.at(index)->start();
+    emit chronoChanged(index);
+    return true;
+}
+
+void ZoneControl::endSaving(int index, ChronoResult result)
+{
+    if(!m_chrono.at(index).saving)
+        return;
+    m_chrono[index].saving = false;
+    m_chronoWait[index] = WaitNone;
+    m_chronoTimers.at(index)->stop();
+    const QString zone = m_zones.at(index);
+    if(result == ChronoSaved)
+        qCInfo(lcMqtt).noquote() << QString("Zone %1: chrono saved by AcquaThermoNet").arg(zone);
+    else if(result == ChronoRefused)
+        qCWarning(lcMqtt).noquote() << QString("Zone %1: chrono change refused by AcquaThermoNet").arg(zone);
+    else
+        qCWarning(lcMqtt).noquote() << QString("Zone %1: chrono change not confirmed by AcquaThermoNet").arg(zone);
+    emit chronoChanged(index);
+    emit chronoResult(index, result);
+}
+
+bool ZoneControl::setChronoOn(int index, bool on)
+{
+    if(!startSaving(index, WaitOnOff))
+        return false;
+    m_chronoOn[index] = on;
+    emit sendChronoOn(m_zones.at(index), on);
+    return true;
+}
+
+bool ZoneControl::saveProgram(int index, const ChronoConfig &program)
+{
+    if(!startSaving(index, WaitProgram))
+        return false;
+    m_chronoSent[index] = program;
+    emit sendChronoProgram(m_zones.at(index), Chrono::programCommand(program));
+    return true;
+}
+
+bool ZoneControl::resetProgram(int index)
+{
+    if(!startSaving(index, WaitReset))
+        return false;
+    emit sendChronoProgram(m_zones.at(index), "{\"reset\":true}");
+    return true;
+}
+
+/**
+ * @brief ZoneControl::onChronoState
+ * <zone>/chrono; the answer to on/off (republished by the controller after
+ * every chrono/set, also when refused)
+ */
+void ZoneControl::onChronoState(const QString &zone, const QByteArray &payload)
+{
+    const int i = indexOf(zone);
+    if(i < 0)
+        return;
+    ChronoState state;
+    if(!Chrono::parseState(payload, state))
+    {
+        qCWarning(lcMqtt).noquote() << QString("Invalid chrono state for zone %1: %2").arg(zone, QString(payload));
+        return;
+    }
+    m_chrono[i].hasState = true;
+    m_chrono[i].state = state;
+    emit chronoChanged(i);
+    if(m_chronoWait.at(i) == WaitOnOff)
+        endSaving(i, state.on == m_chronoOn.at(i) ? ChronoSaved : ChronoRefused);
+}
+
+/**
+ * @brief ZoneControl::onChronoProgram
+ * <zone>/chrono/profile; the answer to a program or a reset (republished
+ * after every chrono/profile/set, also when refused or unchanged)
+ */
+void ZoneControl::onChronoProgram(const QString &zone, const QByteArray &payload)
+{
+    const int i = indexOf(zone);
+    if(i < 0)
+        return;
+    ChronoConfig program;
+    if(!Chrono::parseProgram(payload, program))
+    {
+        qCWarning(lcMqtt).noquote() << QString("Invalid chrono program for zone %1: %2").arg(zone, QString(payload));
+        return;
+    }
+    chrono_t &c = m_chrono[i];
+    c.hasProgram = true;
+    c.program = program;
+    c.programVersion++;
+    emit chronoChanged(i);
+    if(m_chronoWait.at(i) == WaitProgram)
+        endSaving(i, Chrono::sameProgram(m_chronoSent.at(i), program) ? ChronoSaved : ChronoRefused);
+    else if(m_chronoWait.at(i) == WaitReset)
+        endSaving(i, program.edited ? ChronoRefused : ChronoSaved);
 }

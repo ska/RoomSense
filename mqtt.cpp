@@ -4,7 +4,7 @@
 #include <QJsonObject>
 
 /* AcquaThermoNet interface: HA_Hmi_Relay docs/SENSOR_GATEWAY_INTERFACE.md */
-#define TOPIC_ZONE          "RoomSense/apartment/%1/data"
+#define TOPIC_ZONE          "RoomSense/%1/data"
 #define TOPIC_STATUS        "RoomSense/status"
 
 /* AcquaThermoNet topics for the panel setpoints (interface §7) */
@@ -16,13 +16,18 @@
 /* House mode (interface §8) */
 #define CTRL_MODE_STATE     CTRL_BASE "/mode/state"
 #define CTRL_MODE_SET       CTRL_BASE "/mode/set"
+/* Chrono thermostat (interface §9) */
+#define CTRL_CHRONO         "chrono"
+#define CTRL_PROFILE        "profile"
+#define CTRL_CHRONO_SET     CTRL_BASE "/%1/chrono/set"
+#define CTRL_PROFILE_SET    CTRL_BASE "/%1/chrono/profile/set"
 
 /* Plausibility (0.1 degC): the controller does not range-check */
 #define TEMP_MIN_DC         (-200)  /*-20.0 degC*/
 #define TEMP_MAX_DC         500     /* 50.0 degC*/
 #define TEMP_JUMP_DC        30      /*jump from the previous reading to be confirmed*/
 #define TEMP_CONFIRM_DC     5       /*a later reading this close confirms the jump*/
-#define JUMP_WINDOW_S       300     /*jumps checked against readings younger than this*/
+#define JUMP_WINDOW_S       300     /*jumps checked against readings younger than this; older: confirmation needed*/
 #define CONFIRM_MIN_S       10      /*confirmation from a later measurement, not the same advertisement*/
 
 /* Rate, per zone */
@@ -51,6 +56,8 @@ Mqtt::Mqtt(mqtt_brk_t *mbi, QVector<sensor_t> *sensors, QObject *parent) :
     m_control = new ZoneControl(zones, 1000, 5000, this);
     connect(m_control, &ZoneControl::sendSetPoint, this, &Mqtt::publishSetPoint);
     connect(m_control, &ZoneControl::sendMode, this, &Mqtt::publishMode);
+    connect(m_control, &ZoneControl::sendChronoOn, this, &Mqtt::publishChronoOn);
+    connect(m_control, &ZoneControl::sendChronoProgram, this, &Mqtt::publishChronoProgram);
 
     qCDebug(lcMqtt) << "Mqtt::Mqtt " <<  m_mbi->address << " " << m_mbi->port;
     m_client = new QMqttClient(this);
@@ -165,11 +172,11 @@ void Mqtt::sensorValueIsChanged(int index, unsigned time, sensor_env_t data)
         return;
     if( m_sensors->at(index).zone[0] == '\0' )
         return;
-    if( !acceptReading(index, data) )
-    {
+    const Verdict v = acceptReading(index, data);
+    if( v == Filtered )
         m_statsFiltered[index]++;
+    if( v != Accepted )
         return;
-    }
 
     publishZone( index );
 }
@@ -177,10 +184,12 @@ void Mqtt::sensorValueIsChanged(int index, unsigned time, sensor_env_t data)
 /**
  * @brief Mqtt::acceptReading
  * Drops implausible readings: out of range, or a jump not confirmed by a
- * later measurement. Dropping is always safe, publishing a wrong one is not.
- * @return true if stored as the sensor's last reading
+ * later measurement. Without a recent reading to compare with (first one,
+ * or after JUMP_WINDOW_S of silence) a reading also needs a confirmation.
+ * Dropping is always safe, publishing a wrong one is not.
+ * @return Accepted if stored as the sensor's last reading
  */
-bool Mqtt::acceptReading(int index, const sensor_env_t &data)
+Mqtt::Verdict Mqtt::acceptReading(int index, const sensor_env_t &data)
 {
     reading_t &r = m_readings[index];
     const qint64 now = monoSecs();
@@ -189,25 +198,34 @@ bool Mqtt::acceptReading(int index, const sensor_env_t &data)
     if( data.temp < TEMP_MIN_DC || data.temp > TEMP_MAX_DC )
     {
         qCInfo(lcMqtt).noquote() << QString("Sensor %1: temperature %2 out of range, dropped").arg(name).arg(data.temp / 10.0);
-        return false;
+        return Filtered;
     }
 
-    if( r.valid && (now - r.time) <= JUMP_WINDOW_S && qAbs(data.temp - r.temp) > TEMP_JUMP_DC )
+    const bool recent = r.valid && (now - r.time) <= JUMP_WINDOW_S;
+    const bool jump = recent && qAbs(data.temp - r.temp) > TEMP_JUMP_DC;
+    if( !recent || jump )
     {
-        const bool confirmed = r.pending
+        /* the pending reading itself must be recent */
+        const bool pending = r.pending && (now - r.pendingTime) <= JUMP_WINDOW_S;
+        const bool confirmed = pending
                 && (now - r.pendingTime) >= CONFIRM_MIN_S
                 && qAbs(data.temp - r.pendingTemp) <= TEMP_CONFIRM_DC;
         if( !confirmed )
         {
-            if( !r.pending || qAbs(data.temp - r.pendingTemp) > TEMP_CONFIRM_DC )
+            if( !pending || qAbs(data.temp - r.pendingTemp) > TEMP_CONFIRM_DC )
             {
-                qCInfo(lcMqtt).noquote() << QString("Sensor %1: jump %2 -> %3, waiting for confirmation")
-                                            .arg(name).arg(r.temp / 10.0).arg(data.temp / 10.0);
+                if( jump )
+                    qCInfo(lcMqtt).noquote() << QString("Sensor %1: jump %2 -> %3, waiting for confirmation")
+                                                .arg(name).arg(r.temp / 10.0).arg(data.temp / 10.0);
+                else
+                    qCInfo(lcMqtt).noquote() << QString("Sensor %1: %2 %3, waiting for confirmation")
+                                                .arg(name, r.valid ? "first reading after a silence," : "first reading")
+                                                .arg(data.temp / 10.0);
                 r.pending = true;
                 r.pendingTime = now;
                 r.pendingTemp = data.temp;
             }
-            return false;
+            return jump ? Filtered : Confirming;
         }
     }
 
@@ -219,7 +237,7 @@ bool Mqtt::acceptReading(int index, const sensor_env_t &data)
     r.hum    = data.hum;
     r.batt   = data.batt;
     r.battmv = data.battmv;
-    return true;
+    return Accepted;
 }
 
 /**
@@ -321,7 +339,8 @@ void Mqtt::stateChangedSlot()
         /* clean session: subscribe again at every connection; the retained
          * status and states arrive at once */
         const QStringList filters = { CTRL_STATUS, CTRL_BASE "/+/" CTRL_STATE_TEMP, CTRL_BASE "/+/" CTRL_STATE_MODE,
-                                      CTRL_MODE_STATE };
+                                      CTRL_MODE_STATE, CTRL_BASE "/+/" CTRL_CHRONO,
+                                      CTRL_BASE "/+/" CTRL_CHRONO "/" CTRL_PROFILE };
         for( const QString &f : filters )
         {
             if( !m_client->subscribe(QMqttTopicFilter(f)) )
@@ -333,7 +352,7 @@ void Mqtt::stateChangedSlot()
 
 /**
  * @brief Mqtt::messageReceivedSlot
- * AcquaThermoNet status and zone states, for ZoneControl
+ * AcquaThermoNet status, zone states and chrono, for ZoneControl
  */
 void Mqtt::messageReceivedSlot(const QByteArray &message, const QMqttTopicName &topic)
 {
@@ -349,12 +368,22 @@ void Mqtt::messageReceivedSlot(const QByteArray &message, const QMqttTopicName &
         return;
     }
     const QStringList levels = name.split('/');
-    if( levels.size() != 3 || levels.at(0) != CTRL_BASE )
+    if( levels.size() < 3 || levels.at(0) != CTRL_BASE )
+        return;
+    if( levels.size() == 4 )
+    {
+        if( levels.at(2) == CTRL_CHRONO && levels.at(3) == CTRL_PROFILE )
+            m_control->onChronoProgram(levels.at(1), message);
+        return;
+    }
+    if( levels.size() != 3 )
         return;
     if( levels.at(2) == CTRL_STATE_TEMP )
         m_control->onStateTemp(levels.at(1), message);
     else if( levels.at(2) == CTRL_STATE_MODE )
         m_control->onStateMode(levels.at(1), message);
+    else if( levels.at(2) == CTRL_CHRONO )
+        m_control->onChronoState(levels.at(1), message);
 }
 
 /**
@@ -383,6 +412,33 @@ void Mqtt::publishMode(const QString &mode)
     qCInfo(lcMqtt).noquote() << QString("House mode %1 sent to AcquaThermoNet").arg(mode);
     if( m_client->publish( QMqttTopicName(CTRL_MODE_SET), mode.toUtf8(), 1, false ) < 0 )
         qCWarning(lcMqtt).noquote() << QString("House mode %1: publish failed").arg(mode);
+}
+
+/**
+ * @brief Mqtt::publishChronoOn
+ * Chrono on/off: QoS 1, retain false, as the setpoints
+ */
+void Mqtt::publishChronoOn(const QString &zone, bool on)
+{
+    if( m_clientState != QMqttClient::Connected )
+        return;
+    const QByteArray payload = on ? "on" : "off";
+    qCInfo(lcMqtt).noquote() << QString("Zone %1: chrono %2 sent to AcquaThermoNet").arg(zone, QString(payload));
+    if( m_client->publish( QMqttTopicName(QString(CTRL_CHRONO_SET).arg(zone)), payload, 1, false ) < 0 )
+        qCWarning(lcMqtt).noquote() << QString("Zone %1: chrono publish failed").arg(zone);
+}
+
+/**
+ * @brief Mqtt::publishChronoProgram
+ * The whole chrono program, or a reset: QoS 1, retain false
+ */
+void Mqtt::publishChronoProgram(const QString &zone, const QByteArray &payload)
+{
+    if( m_clientState != QMqttClient::Connected )
+        return;
+    qCInfo(lcMqtt).noquote() << QString("Zone %1: chrono program sent to AcquaThermoNet: %2").arg(zone, QString(payload));
+    if( m_client->publish( QMqttTopicName(QString(CTRL_PROFILE_SET).arg(zone)), payload, 1, false ) < 0 )
+        qCWarning(lcMqtt).noquote() << QString("Zone %1: chrono program publish failed").arg(zone);
 }
 
 const QVector<quint32> &Mqtt::statsSentData() const

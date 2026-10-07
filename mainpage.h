@@ -37,6 +37,8 @@ public slots:
 
 signals:
     void diagnosticsRequested();
+    /* a tap on the chrono line of a zone with a chrono program */
+    void chronoRequested(int index);
 
 private:
     void refreshCard(int index);

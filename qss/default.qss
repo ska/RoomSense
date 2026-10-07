@@ -23,6 +23,14 @@ QLabel#tempLabel                { font-size: 56px; font-weight: bold; }
 QLabel#tempLabel[level="lost"], QLabel#tempLabel[level="never"]
                                 { color: #6B737B; }
 QLabel#heatLabel                { color: #7D858D; }
+QPushButton#chronoButton        { background: #2E343A; color: #F3F4F5; font-size: 17px; border: none; border-radius: 20px; padding: 0 14px 0 10px; }
+QPushButton#chronoButton:pressed { background: #4A525B; }
+QPushButton#chronoButton:disabled { background: transparent; color: #F3F4F5; }
+QPushButton#chronoButton[chrono="manual"] { color: #F28C28; font-weight: bold; }
+QPushButton#chronoButton[chrono="paused"], QPushButton#chronoButton[chrono="saving"]
+                                { color: #7DB7FF; }
+QPushButton#chronoButton[chrono="off"], QPushButton#chronoButton[chrono="lastknown"]
+                                { color: #7D858D; }
 QLabel#heatLabel[heat="on"]     { color: #F28C28; font-weight: bold; }
 QLabel#heatLabel[heat="nosensor"] { color: #F2555A; }
 QLabel#setPointValue            { font-size: 34px; font-weight: bold; }
@@ -69,6 +77,47 @@ QToolButton#modeButton[active="true"] { background: #1B2A3A; border-color: #7DB7
 QToolButton#modeButton[active="true"][accessibleName="Boost"]
                                 { background: #3A2412; border-color: #F28C28; color: #F28C28; }
 QToolButton#modeButton:disabled { background: #262A2F; border-color: #262A2F; color: #555C63; }
+
+/* chrono page */
+QWidget#chronoPage              { background: #15181B; }
+QLabel#chronoTitle              { font-size: 30px; font-weight: bold; }
+QPushButton#chronoToggle        { background: #262A2F; color: #A3ABB3; font-size: 18px; font-weight: bold; border: 2px solid #4A525B; border-radius: 28px; padding: 0 18px; }
+QPushButton#chronoToggle[state="on"] { background: #12302C; color: #4FB3A9; border-color: #4FB3A9; }
+QPushButton#chronoToggle:pressed { background: #2E343A; }
+QPushButton#chronoToggle:disabled { color: #555C63; border-color: #2E343A; }
+QLabel#chronoMessage            { background: #12302C; color: #4FB3A9; font-size: 17px; font-weight: bold; padding: 10px 14px; border-radius: 10px; }
+QLabel#chronoMessage[level="bad"] { background: #3A1E20; color: #F2555A; }
+QLabel#chronoNone               { color: #7D858D; font-size: 20px; }
+QFrame#chronoBox                { background: #22262B; border: 1px solid #2E343A; border-radius: 14px; }
+QFrame#chronoBox QLabel         { background: transparent; }
+QLabel#chronoBoxTitle           { font-size: 20px; font-weight: bold; }
+QLabel#chronoNext               { font-size: 20px; }
+QLabel#chronoAxis, QLabel#chronoRange { color: #A3ABB3; font-size: 14px; }
+QLabel#chronoDay                { color: #A3ABB3; font-size: 16px; }
+QLabel#chronoDay[today="true"]  { color: #F3F4F5; font-weight: bold; }
+QLabel#chronoProfileTitle       { color: #A3ABB3; font-size: 14px; font-weight: bold; }
+QLabel#chronoSlots              { font-size: 17px; }
+QLabel#chronoFooter             { color: #A3ABB3; font-size: 15px; }
+QWidget#chronoEditor            { background: #15181B; }
+QPushButton#editSave            { background: #4FB3A9; color: #0E1012; font-size: 20px; font-weight: bold; border: none; border-radius: 12px; padding: 0 24px; }
+QPushButton#editSave:pressed    { background: #3E9087; }
+QPushButton#editSave:disabled   { background: #262A2F; color: #555C63; }
+QPushButton#editTab             { background: #22262B; color: #A3ABB3; font-size: 18px; font-weight: bold; border: none; border-radius: 12px; }
+QPushButton#editTab:checked     { background: #2E5A55; color: #F3F4F5; }
+QPushButton#editChip            { background: #22262B; color: #A3ABB3; font-size: 16px; border: 1px solid #2E343A; border-radius: 24px; }
+QPushButton#editChip:checked    { background: #3A3320; color: #F3F4F5; font-weight: bold; border: 2px solid #F3F4F5; }
+QLabel#editValue                { font-size: 52px; font-weight: bold; }
+QPushButton#editStep            { background: #343A41; color: #F3F4F5; font-size: 36px; border: none; border-radius: 14px; }
+QPushButton#editStep:pressed    { background: #4A525B; }
+QPushButton#editStep:disabled, QPushButton#editButton:disabled, QPushButton#editSplit:disabled, QPushButton#editDelete:disabled
+                                { background: #262A2F; color: #555C63; border-color: #262A2F; }
+QPushButton#editButton          { background: #343A41; color: #F3F4F5; font-size: 17px; font-weight: bold; border: none; border-radius: 14px; padding: 0 14px; }
+QPushButton#editButton:pressed, QPushButton#editSplit:pressed, QPushButton#editDelete:pressed
+                                { background: #4A525B; }
+QPushButton#editSplit           { background: transparent; color: #F3F4F5; font-size: 17px; font-weight: bold; border: 2px dashed #4A525B; border-radius: 14px; }
+QPushButton#editDelete          { background: #3A1E20; color: #F2555A; font-size: 17px; font-weight: bold; border: none; border-radius: 14px; }
+DayChart                        { qproperty-warmColor: #F28C28; qproperty-mildColor: #D9A441; qproperty-coolColor: #5B8FD6;
+                                  qproperty-offColor: #4A525B; qproperty-lineColor: #F3F4F5; qproperty-labelColor: #0E1012; }
 
 /* screen saver */
 QWidget#screenSaver             { background: #000000; }

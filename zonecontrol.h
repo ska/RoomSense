@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QStringList>
+#include "chrono.h"
 #include <QTimer>
 #include <QVector>
 
@@ -24,6 +25,15 @@
  * The request is pending until a mode/state arrives after it, or until it
  * times out. While a mode is active the zone setpoints cannot be changed.
  *
+ * Chrono thermostat (§9): the state (<zone>/chrono) and the program
+ * (<zone>/chrono/profile) of each zone as AcquaThermoNet publishes them.
+ * A change from the panel (on/off, a new program, a reset) is "saving"
+ * until the controller answers: the next chrono state for on/off, the
+ * next program for the others (also when refused), or a timeout. The
+ * result is told once (chronoResult). The program version grows at every
+ * program received: an editor compares it to warn about a change made
+ * elsewhere meanwhile. House modes do not block the chrono.
+ *
  * Zones by index: the sensor index, one sensor per zone.
  */
 class ZoneControl : public QObject
@@ -37,6 +47,18 @@ public:
     static constexpr double MAX = 25;
 
     enum HouseMode { Normal, Window, Away, Boost };
+    /* Answer to a chrono change from the panel */
+    enum ChronoResult { ChronoSaved, ChronoRefused, ChronoNotConfirmed };
+    Q_ENUM(ChronoResult)
+
+    typedef struct {
+        bool        hasState = false;       /*a <zone>/chrono was received*/
+        ChronoState state;
+        bool        hasProgram = false;     /*a <zone>/chrono/profile was received*/
+        ChronoConfig program;
+        int         programVersion = 0;     /*programs received*/
+        bool        saving = false;         /*changed on the panel, no answer yet*/
+    } chrono_t;
 
     typedef struct {
         bool    hasSetPoint = false;    /*a state_temp was received*/
@@ -90,6 +112,18 @@ public:
     /* "21.3" -> 21.5, clamped to MIN..MAX, as AcquaThermoNet does */
     static double normalize(double value);
 
+    /* Chrono of the zone */
+    const chrono_t &chrono(int index) const { return m_chrono.at(index); }
+    /* A chrono change is possible now: controller reachable, program
+     * known, nothing being saved */
+    bool canChangeChrono(int index) const;
+    /* Panel: chrono on or off (chrono/set); false if not possible now */
+    bool setChronoOn(int index, bool on);
+    /* Panel: the whole program (enabled, weekday, holiday) */
+    bool saveProgram(int index, const ChronoConfig &program);
+    /* Panel: back to the program of the controller configuration */
+    bool resetProgram(int index);
+
 public slots:
     /* From Mqtt */
     void setConnected(bool connected);
@@ -98,6 +132,9 @@ public slots:
     void onStateMode(const QString &zone, const QByteArray &payload);
     /* mode/state JSON: {"mode":"window","remaining_s":1740} */
     void onModeState(const QByteArray &payload);
+    /* <zone>/chrono and <zone>/chrono/profile JSON */
+    void onChronoState(const QString &zone, const QByteArray &payload);
+    void onChronoProgram(const QString &zone, const QByteArray &payload);
 
 signals:
     /* To Mqtt: publish AcquaThermoNet/<zone>/set_temp */
@@ -107,6 +144,14 @@ signals:
     /* To Mqtt: publish AcquaThermoNet/mode/set */
     void sendMode(const QString &mode);
     void houseModeChanged();
+    /* To Mqtt: publish AcquaThermoNet/<zone>/chrono/set (on/off) */
+    void sendChronoOn(const QString &zone, bool on);
+    /* To Mqtt: publish AcquaThermoNet/<zone>/chrono/profile/set */
+    void sendChronoProgram(const QString &zone, const QByteArray &payload);
+    /* State, program or saving of the zone changed */
+    void chronoChanged(int index);
+    /* The answer to a chrono change from the panel, once */
+    void chronoResult(int index, ZoneControl::ChronoResult result);
 
 private:
     void cancelPending(int index);
@@ -132,6 +177,16 @@ private:
     QTimer             *m_modeTimer;        /*mode request not confirmed*/
 
     void cancelAllPending();
+
+    /* Chrono: what is being saved and how the answer is recognized */
+    enum ChronoWait { WaitNone, WaitOnOff, WaitProgram, WaitReset };
+    QVector<chrono_t>   m_chrono;
+    QVector<ChronoWait> m_chronoWait;
+    QVector<bool>       m_chronoOn;         /*WaitOnOff: requested*/
+    QVector<ChronoConfig> m_chronoSent;     /*WaitProgram: sent*/
+    QVector<QTimer *>   m_chronoTimers;     /*no answer*/
+    bool startSaving(int index, ChronoWait wait);
+    void endSaving(int index, ChronoResult result);
 };
 
 #endif // ZONECONTROL_H

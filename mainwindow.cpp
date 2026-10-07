@@ -1,4 +1,6 @@
 #include "mainwindow.h"
+#include "chronoeditor.h"
+#include "chronopage.h"
 #include "diagpage.h"
 #include "mainpage.h"
 #include "screensaver.h"
@@ -16,6 +18,8 @@ MainWindow::MainWindow(Mqtt *mqtt, QWidget *parent)
     qCDebug(lcApp) << "Screen, W: " << screenWidth << "H: " << screenHeight;
     m_mainPage = nullptr;
     m_diagPage = nullptr;
+    m_chronoPage = nullptr;
+    m_chronoEditor = nullptr;
     m_saver = nullptr;
     m_idleTimer = new QTimer(this);
     m_idleTimer->setSingleShot(true);
@@ -46,6 +50,15 @@ void MainWindow::setupPages(QVector<sensor_t> *sensors, const BleStatus *ble, co
     m_diagPage = new DiagPage(sensors, m_mqtt, ble, watchdog, weather, m_stack);
     m_stack->addWidget(m_diagPage);
     connect( m_diagPage, &DiagPage::backRequested, this, &MainWindow::showMainPage );
+
+    m_chronoPage = new ChronoPage(*sensors, m_mqtt->zoneControl(), m_stack);
+    m_stack->addWidget(m_chronoPage);
+    connect( m_mainPage, &MainPage::chronoRequested, this, &MainWindow::showChronoPage );
+    connect( m_chronoPage, &ChronoPage::backRequested, this, &MainWindow::showMainPage );
+    m_chronoEditor = new ChronoEditor(*sensors, m_mqtt->zoneControl(), m_stack);
+    m_stack->addWidget(m_chronoEditor);
+    connect( m_chronoPage, &ChronoPage::editRequested, this, &MainWindow::showChronoEditor );
+    connect( m_chronoEditor, &ChronoEditor::done, this, &MainWindow::showChronoPage );
 
     m_saver = new ScreenSaver(*sensors, m_mqtt->zoneControl(), screenSaver, weather, m_stack);
     m_stack->addWidget(m_saver);
@@ -122,6 +135,22 @@ void MainWindow::showDiagnosticPage()
 {
     if( m_diagPage )
         m_stack->setCurrentWidget(m_diagPage);
+}
+
+void MainWindow::showChronoPage(int zone)
+{
+    if( !m_chronoPage )
+        return;
+    m_chronoPage->showZone(zone);
+    m_stack->setCurrentWidget(m_chronoPage);
+}
+
+void MainWindow::showChronoEditor(int zone)
+{
+    if( !m_chronoEditor )
+        return;
+    m_chronoEditor->edit(zone);
+    m_stack->setCurrentWidget(m_chronoEditor);
 }
 
 void MainWindow::onReading(int index, unsigned time, sensor_env_t data)

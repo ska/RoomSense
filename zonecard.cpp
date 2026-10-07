@@ -1,4 +1,5 @@
 #include "zonecard.h"
+#include "modepopup.h"
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -29,6 +30,17 @@ ZoneCard::ZoneCard(const QString &name, QWidget *parent) : QFrame(parent)
     m_name = label("zoneName", this);
     m_name->setText(name);
     m_heat = label("heatLabel", this);
+    /* chrono: next to the name (the card keeps its height: five fit), a
+     * button that opens the chrono page of the zone */
+    m_chrono = new QPushButton(this);
+    m_chrono->setObjectName("chronoButton");
+    m_chrono->setIcon(modeIcon("clock", 20, "#A3ABB3"));
+    m_chrono->setIconSize(QSize(20, 20));
+    m_chrono->setFixedHeight(40);
+    m_chrono->setFocusPolicy(Qt::NoFocus);
+    m_chrono->setAccessibleName("Chrono");
+    m_chrono->hide();
+    connect(m_chrono, &QPushButton::clicked, this, &ZoneCard::chronoClicked);
     m_temp = label("tempLabel", this);
     m_setPoint = label("setPointValue", this);
     m_setPoint->setAlignment(Qt::AlignCenter);
@@ -54,6 +66,8 @@ ZoneCard::ZoneCard(const QString &name, QWidget *parent) : QFrame(parent)
 
     QHBoxLayout *top = new QHBoxLayout;
     top->addWidget(m_name);
+    top->addSpacing(14);
+    top->addWidget(m_chrono);
     top->addStretch();
     top->addWidget(m_heat);
 
@@ -110,4 +124,12 @@ void ZoneCard::display(const ZoneView::view_t &v, bool canChange)
     setStyleProperty(m_setPoint, "setpoint", setPoints[v.setPoint]);
     setStyleProperty(m_setPointLabel, "setpoint", setPoints[v.setPoint]);
     setStyleProperty(m_batt, "low", v.battLow ? "true" : "false");
+}
+
+void ZoneCard::displayChrono(const ZoneView::chrono_view_t &v)
+{
+    m_chrono->setVisible(v.shown);
+    m_chrono->setText(v.tappable ? v.text + QString::fromUtf8("  ›") : v.text);
+    m_chrono->setEnabled(v.tappable);
+    setStyleProperty(m_chrono, "chrono", v.level);
 }

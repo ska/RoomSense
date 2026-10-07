@@ -99,7 +99,7 @@ int ConfigFile::ReadSensorsInfo( QVector<sensor_t> &sensors )
         }
         tmp.id = count;
 
-        /* Zone name of AcquaThermoNet (topic RoomSense/apartment/<zone>/data),
+        /* Zone name of AcquaThermoNet (topic RoomSense/<zone>/data),
          * case sensitive; default: the sensor name */
         const QString zone = settings.value("zone", QString::fromUtf8(tmp.name)).toString().trimmed();
         if( !validZoneName(zone) || zone.size() >= (int)sizeof(tmp.zone) )
