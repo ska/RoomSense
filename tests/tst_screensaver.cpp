@@ -104,6 +104,30 @@ private slots:
         QCOMPARE(saver.webcamImage().size(), QSize(320, 240));
     }
 
+    void noHeatingNotInSummary()
+    {
+        QVector<sensor_t> sensors(2);
+        memset(sensors.data(), 0, sizeof(sensor_t) * 2);
+        qstrncpy(sensors[0].name, "salotto", sizeof(sensors[0].name));
+        qstrncpy(sensors[0].zone, "salotto", sizeof(sensors[0].zone));
+        qstrncpy(sensors[1].name, "taverna", sizeof(sensors[1].name));
+        qstrncpy(sensors[1].zone, "taverna", sizeof(sensors[1].zone));
+        sensors[1].noHeating = true;
+        ZoneControl control({ "salotto", "" });
+        control.setConnected(true);
+        control.onStatus("online");
+        ScreenSaver saver(sensors, &control, screensaver_t());
+        saver.onBrokerState(2);
+        saver.resize(600, 1024);
+        saver.show();
+        saver.refresh();
+        QStringList lines;
+        for(QLabel *l : saver.findChildren<QLabel *>("saverLine"))
+            lines << l->text();
+        QVERIFY2(lines.join("|").contains("No reading yet: Salotto"), qPrintable(lines.join("|")));
+        QVERIFY2(!lines.join("|").contains("Taverna"), qPrintable(lines.join("|")));
+    }
+
     void idleAndWake()
     {
         QVector<sensor_t> sensors(1);

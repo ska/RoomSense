@@ -7,8 +7,10 @@ boiler room, and shows the zones on a 600×1024 portrait touch panel: the
 temperatures, the setpoints (changed through AcquaThermoNet), the house
 mode, a screen saver with the outdoor weather.
 
-This document describes version **3.0.0**, to be installed together with
-AcquaThermoNet 3.0.0 (the reading topic changed).
+This document describes version **3.1.0**, for AcquaThermoNet 3.0.0 or
+later (RoomSense 3.0.0 changed the reading topic: older controllers do not
+work with it). New in 3.1.0: sensors outside the heating, published with
+their Home Assistant discovery (§5.4).
 The same content, with rendered diagrams, is in
 [`RoomSense.html`](RoomSense.html). Build: [`BUILD.md`](BUILD.md); tests:
 [`TESTING.md`](TESTING.md); deployment package:
@@ -105,7 +107,9 @@ flowchart LR
   shows what it publishes (retained) and sends commands; it never keeps a
   setpoint of its own.
 - **Home Assistant** reads the same reading topics (current temperature
-  of its climate entities) and changes the setpoints like the panel.
+  of its climate entities) and changes the setpoints like the panel. The
+  sensors outside the heating reach it through the discovery published
+  by RoomSense (5.4).
 - The **weather** is fetched by RoomSense itself, for its screen saver.
 
 ---
@@ -222,6 +226,53 @@ refused by the loader (logged) and not published. The zone must be a
 valid AcquaThermoNet zone name (`[A-Za-z0-9_-]`, not `list` or `mode`),
 case sensitive.
 
+### 5.4 Sensors outside the heating
+
+A sensor with `heating=false` (e.g. the taverna, not heated) is read and
+published like the others, on `RoomSense/<zone>/data` with the same
+payload, filters and rate, so that Home Assistant can show it. It is no
+zone of the panel: no card on the main page, not in the screen saver, no
+setpoint, house mode or chrono command; it is shown only on the Sensors
+tab of the diagnostic page. Its zone name must **not** be an
+AcquaThermoNet zone (the controller ignores a zone it does not have; with
+one of its zones it would regulate on this sensor).
+
+For these sensors only RoomSense publishes the **Home Assistant MQTT
+discovery** (the heated rooms are the `climate` entities of
+AcquaThermoNet): no YAML in Home Assistant. One device per sensor,
+`RoomSense <name>` (identifier `<unique_id>_<zone>`, model `RoomSense`,
+the RoomSense version), with three `sensor` entities, retained, QoS 1:
+
+| Topic `homeassistant/sensor/…/config` | Entity | `dev_cla` | Unit |
+|---|---|---|---|
+| `<unique_id>_<zone>_temperature` | Temperature | `temperature` | °C |
+| `<unique_id>_<zone>_humidity` | Humidity | `humidity` | % |
+| `<unique_id>_<zone>_battery` | Battery | `battery` | % |
+
+Common keys: `uniq_id` as the topic id, `stat_t` `RoomSense/<zone>/data`,
+`val_tpl` `{{ value_json.<field> }}` (with `| default(none)` for
+`humidity` and `battery`),
+`stat_cla` `measurement`, `avty_t` `RoomSense/status`, `exp_aft` 900
+(15 min, as the silence after which AcquaThermoNet counts a sensor as
+lost): RoomSense never republishes an old value, so the entities become
+unavailable when the sensor is no longer heard, or at once when RoomSense
+goes offline. `humidity` and `battery` are left out of a reading when
+unknown: the entity is unknown until the next reading with them. For the
+taverna (`name=Taverna`) Home Assistant creates
+`sensor.roomsense_taverna_temperature`, `sensor.roomsense_taverna_humidity`
+and `sensor.roomsense_taverna_battery`.
+
+The discovery is published at every connection and again when
+`homeassistant/status` becomes `online` (Home Assistant restarted).
+
+- **Set `[MQTT] unique_id`** before the first start with such a sensor:
+  without it the host name is used, and a new host name gives new
+  entities (`_2`) while the old ones stay.
+- **No automatic cleanup**: a sensor removed or set back to heating keeps
+  its discovery retained on the broker. Clear it by hand, one command per
+  field (`temperature`, `humidity`, `battery`):
+  `mosquitto_pub -h <broker> -u <user> -P <password> -r -n -t homeassistant/sensor/<unique_id>_<zone>_<field>/config`.
+
 ---
 
 ## 6. MQTT
@@ -245,7 +296,9 @@ retained AcquaThermoNet state arrives at once.
 | Topic | Dir. | Payload | QoS | Retain | Interface |
 |---|---|---|---|---|---|
 | `RoomSense/status` | out | `online` / `offline` | 1 | yes | |
-| `RoomSense/<zone>/data` | out | reading JSON (6.3) | 1 | no | §3–6 |
+| `RoomSense/<zone>/data` | out | reading JSON (6.3), also for the sensors outside the heating (5.4) | 1 | no | §3–6 |
+| `homeassistant/sensor/<unique_id>_<zone>_<field>/config` | out | discovery of a sensor outside the heating (5.4) | 1 | yes | |
+| `homeassistant/status` | in | `online`: discovery published again (subscribed at QoS 1) | | | |
 | `AcquaThermoNet/<zone>/set_temp` | out | plain number, e.g. `21.5` | 1 | no | §7 |
 | `AcquaThermoNet/mode/set` | out | `normal` / `window` / `away` / `boost` | 1 | no | §8 |
 | `AcquaThermoNet/status` | in | `online` / `offline` | | | §7 |
@@ -410,7 +463,8 @@ Back and three tabs:
   last advertisement, watchdog, uptime, log file and size, weather and
   its last error;
 - **Sensors**: per sensor name, MAC, RSSI, last reading, messages sent,
-  readings dropped;
+  readings dropped; also the sensors outside the heating (5.4), shown
+  nowhere else;
 - **Log**: the last 200 messages (info and above).
 
 ### 9.4 Screen saver
@@ -457,7 +511,7 @@ The last 200 messages are kept for the Log tab.
 Typical lines:
 
 ```
-I rs.app: RoomSense v3.0.0 (git 1a2b3c4, built 2026-10-07 18:30:00 UTC)
+I rs.app: RoomSense v3.1.0 (git 1a2b3c4, built 2026-10-19 18:30:00 UTC)
 I rs.ble: Using hci0
 I rs.ble: BLE scan started
 I rs.mqtt: MQTT client id:  "RoomSense-house"
@@ -498,7 +552,7 @@ values are logged (`Invalid X, using Y`) and replaced by the default.
 | `broker_addr` | – (`localhost`) | host or IP |
 | `broker_port` | 1883 | |
 | `broker_uname`, `broker_password` | – | used only when both are set; plain text, never logged |
-| `unique_id` | – (host name) | client id `RoomSense-<unique_id>` |
+| `unique_id` | – (host name) | client id `RoomSense-<unique_id>`; also in the Home Assistant discovery ids (5.4): set it, so they do not change with the host name |
 | `publish_interval_s` | 120 | 60…300; earlier on a 0.1 °C change |
 
 ### [SENSORS]
@@ -510,6 +564,7 @@ One group per sensor:
 | `mac` | `A4:C1:38:00:00:01` | any case; an invalid one is never read |
 | `name` | | shown on the panel |
 | `zone` | (name) | AcquaThermoNet zone, case sensitive, `[A-Za-z0-9_-]`, not `list` or `mode`; one sensor per zone |
+| `heating` | `true` | `false`: outside the heating, published with its Home Assistant discovery, shown only on the diagnostic page (5.4); its zone must not be an AcquaThermoNet zone |
 
 The sensor index (diagnostics, `RS_FAKE`) is the group order of QSettings:
 alphabetical.
@@ -553,6 +608,10 @@ unique_id=house
 salotto\mac=A4:C1:38:00:00:01
 salotto\name=Salotto
 salotto\zone=salotto
+taverna\mac=A4:C1:38:00:00:06
+taverna\name=Taverna
+taverna\zone=taverna
+taverna\heating=false
 
 [SCREENSAVER]
 idle_s=60

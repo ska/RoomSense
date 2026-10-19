@@ -1,3 +1,4 @@
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSignalSpy>
@@ -95,6 +96,8 @@ private slots:
         addSensor(m_sensors, "A4:C1:38:00:00:01", "salotto");
         addSensor(m_sensors, "A4:C1:38:00:00:02", "ingresso");
         addSensor(m_sensors, "A4:C1:38:00:00:03", "");         /* no zone */
+        addSensor(m_sensors, "A4:C1:38:00:00:04", "taverna");  /* outside the heating */
+        m_sensors[3].noHeating = true;
 
         memset(&m_mbi, 0, sizeof(m_mbi));
         qstrncpy(m_mbi.address, "127.0.0.1", sizeof(m_mbi.address));
@@ -104,7 +107,7 @@ private slots:
 
         m_mqtt = new Mqtt(&m_mbi, &m_sensors);
         QTRY_COMPARE(count(TOPIC_STATUS), 1);                  /* online */
-        QTRY_COMPARE(m_broker->subscriptions.size(), 6);
+        QTRY_COMPARE(m_broker->subscriptions.size(), 7);
     }
 
     void cleanup()
@@ -176,7 +179,103 @@ private slots:
     {
         send(2, reading(200));
         idle();
-        QCOMPARE(m_broker->publishes.size(), 1);               /* only online */
+        for(const FakeBroker::publish_t &p : m_broker->publishes)  /* only online and discovery */
+            QVERIFY2(p.topic == TOPIC_STATUS || p.topic.startsWith("homeassistant/"), qPrintable(p.topic));
+    }
+
+    void discoveryTopics()
+    {
+        /* only the sensor outside the heating; retained, QoS 1 */
+        QStringList topics;
+        for(const FakeBroker::publish_t &p : m_broker->publishes)
+            if(p.topic.startsWith("homeassistant/"))
+            {
+                topics << p.topic;
+                QCOMPARE(p.qos, 1);
+                QVERIFY(p.retain);
+            }
+        QCOMPARE(topics, QStringList({ "homeassistant/sensor/gw1_taverna_temperature/config",
+                                       "homeassistant/sensor/gw1_taverna_humidity/config",
+                                       "homeassistant/sensor/gw1_taverna_battery/config" }));
+    }
+
+    void discoveryPayload()
+    {
+        const QJsonObject t = json(m_broker->on("homeassistant/sensor/gw1_taverna_temperature/config").first());
+        QCOMPARE(t["name"].toString(), QString("Temperature"));
+        QCOMPARE(t["uniq_id"].toString(), QString("gw1_taverna_temperature"));
+        QCOMPARE(t["stat_t"].toString(), QString("RoomSense/taverna/data"));
+        QCOMPARE(t["val_tpl"].toString(), QString("{{ value_json.temperature }}"));
+        QCOMPARE(t["dev_cla"].toString(), QString("temperature"));
+        QCOMPARE(t["unit_of_meas"].toString(), QString::fromUtf8("°C"));
+        QCOMPARE(t["stat_cla"].toString(), QString("measurement"));
+        QCOMPARE(t["avty_t"].toString(), QString(TOPIC_STATUS));
+        QCOMPARE(t["exp_aft"].toInt(), 900);
+        const QJsonObject d = t["device"].toObject();
+        QCOMPARE(d["name"].toString(), QString("RoomSense taverna"));
+        QCOMPARE(d["model"].toString(), QString("RoomSense"));
+        QCOMPARE(d["sw_version"].toString(), QString(SW_VER));
+        QCOMPARE(d["identifiers"].toArray(), QJsonArray({ "gw1_taverna" }));
+        QVERIFY(!d["manufacturer"].toString().isEmpty());
+
+        const QJsonObject h = json(m_broker->on("homeassistant/sensor/gw1_taverna_humidity/config").first());
+        QCOMPARE(h["val_tpl"].toString(), QString("{{ value_json.humidity | default(none) }}"));
+        QCOMPARE(h["dev_cla"].toString(), QString("humidity"));
+        QCOMPARE(h["unit_of_meas"].toString(), QString("%"));
+        QCOMPARE(h["device"].toObject(), d);
+        const QJsonObject b = json(m_broker->on("homeassistant/sensor/gw1_taverna_battery/config").first());
+        QCOMPARE(b["val_tpl"].toString(), QString("{{ value_json.battery | default(none) }}"));
+        QCOMPARE(b["dev_cla"].toString(), QString("battery"));
+        QCOMPARE(b["unit_of_meas"].toString(), QString("%"));
+    }
+
+    void discoveryNotForHeating()
+    {
+        QVERIFY(Mqtt::discovery("gw1", m_sensors[0]).isEmpty());   /* heating */
+        sensor_t s = m_sensors[3];
+        s.zone[0] = '\0';                                         /* invalid zone: not published */
+        QVERIFY(Mqtt::discovery("gw1", s).isEmpty());
+        QCOMPARE(Mqtt::discovery("gw1", m_sensors[3]).size(), 3);
+    }
+
+    void discoveryOnHomeAssistantOnline()
+    {
+        const char *topic = "homeassistant/sensor/gw1_taverna_temperature/config";
+        QCOMPARE(count(topic), 1);
+        m_broker->deliver("homeassistant/status", "offline");
+        idle();
+        QCOMPARE(count(topic), 1);
+        m_broker->deliver("homeassistant/status", "online");
+        QTRY_COMPARE(count(topic), 2);
+        QCOMPARE(count("homeassistant/sensor/gw1_taverna_battery/config"), 2);
+    }
+
+    void discoveryAtReconnect()
+    {
+        const quint16 port = m_broker->port();
+        m_broker->stop();
+        QTRY_VERIFY(m_mqtt->isDisconnected());
+        QVERIFY(m_broker->listen(port));
+        QTRY_COMPARE_WITH_TIMEOUT(count("homeassistant/sensor/gw1_taverna_temperature/config"), 2, 5000);
+    }
+
+    void noHeatingPublishedNotZone()
+    {
+        first(3, reading(150));
+        QTRY_COMPARE(count("RoomSense/taverna/data"), 1);
+        QCOMPARE(json(m_broker->on("RoomSense/taverna/data").first())["temperature"].toDouble(), 15.0);
+
+        /* no zone of ZoneControl: never a command for it */
+        m_broker->deliver("AcquaThermoNet/taverna/state_temp", "20", true);
+        ZoneControl *c = m_mqtt->zoneControl();
+        QTRY_VERIFY(c->canChange(0));
+        QCOMPARE(c->indexOf("taverna"), -1);
+        QVERIFY(!c->canChange(3));
+        QVERIFY(!c->step(3, 1));
+        c->stepAll(1);
+        QTRY_COMPARE(count(SALOTTO_SET), 1);
+        idle();
+        QCOMPARE(count("AcquaThermoNet/taverna/set_temp"), 0);
     }
 
     void rate()
@@ -312,13 +411,14 @@ private slots:
 
     void controllerSubscriptions()
     {
-        QTRY_COMPARE(m_broker->subscriptions.size(), 6);
+        QTRY_COMPARE(m_broker->subscriptions.size(), 7);
         QVERIFY(m_broker->subscriptions.contains(CTRL_STATUS));
         QVERIFY(m_broker->subscriptions.contains(MODE_STATE));
         QVERIFY(m_broker->subscriptions.contains("AcquaThermoNet/+/state_temp"));
         QVERIFY(m_broker->subscriptions.contains("AcquaThermoNet/+/state_mode"));
         QVERIFY(m_broker->subscriptions.contains("AcquaThermoNet/+/chrono"));
         QVERIFY(m_broker->subscriptions.contains("AcquaThermoNet/+/chrono/profile"));
+        QCOMPARE(m_broker->subscriptionQos.value("homeassistant/status", -1), 1);
 
         /* the retained state arrives at the subscription */
         ZoneControl *c = m_mqtt->zoneControl();

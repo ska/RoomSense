@@ -98,6 +98,7 @@ typedef struct {
     char smac[20];
     char name[32];
     char zone[32];    /*AcquaThermoNet zone name (MQTT topic), default: name*/
+    bool noHeating;   /*ini heating=false: published, not a zone of the GUI (e.g. taverna)*/
     uint16_t polltime;
     /*env data*/
     sensor_env_t se;

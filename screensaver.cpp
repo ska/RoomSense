@@ -45,6 +45,7 @@ ScreenSaver::ScreenSaver(const QVector<sensor_t> &sensors, ZoneControl *control,
             shown[0] = shown[0].toUpper();
         m_names.append(shown);
         m_hasZone.append(!zone.isEmpty());
+        m_noHeating.append(s.noHeating);
     }
 
     m_clock = label("saverClock", this);
@@ -159,6 +160,8 @@ void ScreenSaver::refresh()
     in.controllerOnline = m_control->controllerOnline();
     for(int i = 0; i < m_names.size(); i++)
     {
+        if(m_noHeating.at(i))
+            continue;       /*outside the heating: not in the summary*/
         SaverView::zone_t z;
         z.name = m_names.at(i);
         z.hasZone = m_hasZone.at(i);

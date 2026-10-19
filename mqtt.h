@@ -13,6 +13,8 @@
  * Panel setpoints (§7): the AcquaThermoNet status, state_temp and
  * state_mode topics feed ZoneControl, its commands go out on set_temp;
  * the house mode (§8) on mode/state and mode/set.
+ * Home Assistant discovery only for the sensors outside the heating
+ * (heating=false), again when homeassistant/status is online.
  */
 class Mqtt : public QObject
 {
@@ -39,6 +41,9 @@ public:
 
     /* Setpoints of the zones and the panel commands */
     ZoneControl *zoneControl() const { return m_control; }
+
+    /* Home Assistant discovery of a sensor outside the heating (topic, payload) */
+    static QVector<QPair<QString, QByteArray>> discovery(const QString &uniqueId, const sensor_t &sensor);
 
 public slots:
     void sensorValueIsChanged(int index, unsigned time, sensor_env_t data);
@@ -87,10 +92,12 @@ private:
     void scheduleReconnect();
     Verdict acceptReading(int index, const sensor_env_t &data);
     void publishZone(int index);
+    void publishDiscovery();
     qint64 monoSecs() const;
 
     mqtt_brk_t          *m_mbi;
     QMqttClient         *m_client;
+    QString             m_uniqueId;     /*[MQTT] unique_id, else the host name*/
     QTimer              *m_reconnectTimer;
     QTimer              *m_connectTimer;
     QVector<sensor_t>   *m_sensors;

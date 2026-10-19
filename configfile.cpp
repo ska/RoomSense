@@ -113,6 +113,9 @@ int ConfigFile::ReadSensorsInfo( QVector<sensor_t> &sensors )
             zones.append(zone);
         }
 
+        /* outside the heating: published, shown on the Diagnostics page only */
+        tmp.noHeating = !settings.value("heating", true).toBool();
+
         settings.endGroup();
         sensors.append(tmp);
         count++;

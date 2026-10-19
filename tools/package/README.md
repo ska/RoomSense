@@ -39,7 +39,7 @@ binary.
 
 Version: the latest git tag `vX.Y.Z` (`0.0.0` before the first one or
 outside a git checkout); built after the tag, the commit short hash is
-appended (`3.0.0-0566e34`); `--version` overrides it. By hand:
+appended (`3.1.0-0566e34`); `--version` overrides it. By hand:
 
 ```
 tools/package/make_package.sh --bin-dir <build>/bin_arm --arch Arm32 \

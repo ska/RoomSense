@@ -105,7 +105,7 @@ debug builds).
 ### 2.4 Version
 
 From the latest git tag `vX.Y.Z` **when qmake runs** (`version.pri`):
-`3.0.0` at the tag, `3.0.0-<hash>` after it, `0.0.0` with no tag
+`3.1.0` at the tag, `3.1.0-<hash>` after it, `0.0.0` with no tag
 reachable. The release tags live on the `public` branch, so a build of
 `master` reports `0.0.0-<hash>`; a release is built from its tag. Rerun
 `qmake -r` after a commit or a tag (a plain qmake on the subdirs project
@@ -183,8 +183,8 @@ $RS/tools/package/make_package.sh --bin-dir ~/build/rs-arm/bin_arm --arch Arm32 
 From the release **tag** (on `public`), in a clean checkout:
 
 ```sh
-git -C $RS worktree add /tmp/rs-v3.0.0 v3.0.0
-cd /tmp/rs-v3.0.0 && git submodule update --init
+git -C $RS worktree add /tmp/rs-v3.1.0 v3.1.0
+cd /tmp/rs-v3.1.0 && git submodule update --init
 source /home/devel/Sviluppi/Sdk/1.3.x/environment-setup-cortexa7hf-neon-poky-linux-gnueabi
 mkdir build && cd build && qmake -r ../RoomSense.pro && make -j$(nproc)
 ```
@@ -193,13 +193,13 @@ Before installing, check:
 
 | Check | Command | Expected |
 |---|---|---|
-| version | `unzip -p dist/*.zip package.info` | `<version>3.0.0</version>`, no hash |
+| version | `unzip -p dist/*.zip package.info` | `<version>3.1.0</version>`, no hash |
 | no hardware division | `objdump -d bin_arm/RoomSense \| grep -cE '(s\|u)div'` | `0` |
 | content | `unzip -l dist/*.zip` | `deploy/RoomSense`, `deploy/hciconfig`, `deploy/start.sh`, `deploy/setting.default.ini`, the hooks |
-| checksum | `(cd dist && sha256sum *.zip > RoomSense_Package_Arm32_3.0.0.zip.sha256)` | kept with the zip |
+| checksum | `(cd dist && sha256sum *.zip > RoomSense_Package_Arm32_3.1.0.zip.sha256)` | kept with the zip |
 
 Then keep the zip with its `.debug` and remove the worktree
-(`git -C $RS worktree remove /tmp/rs-v3.0.0`).
+(`git -C $RS worktree remove /tmp/rs-v3.1.0`).
 
 ### 4.3 Install
 

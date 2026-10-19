@@ -112,6 +112,21 @@ private slots:
             QCOMPARE(int(v[i].id), i);
     }
 
+    void sensorHeating()
+    {
+        QTemporaryDir dir;
+        const auto v = readSensors(writeIni(dir,
+            "[SENSORS]\n"
+            "a1\\name=salotto\n"                                 /* default: heating */
+            "a2\\name=camera\na2\\heating=true\n"
+            "a3\\name=taverna\na3\\heating=false\n"));
+        QCOMPARE(v.size(), 3);
+        QVERIFY(!v[0].noHeating);
+        QVERIFY(!v[1].noHeating);
+        QVERIFY(v[2].noHeating);
+        QCOMPARE(QString(v[2].zone), QString("taverna"));      /* still published */
+    }
+
     void ensureSettings()
     {
         QTemporaryDir dir;

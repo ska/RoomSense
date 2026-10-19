@@ -1,5 +1,6 @@
 #include "mqtt.h"
 #include "monoclock.h"
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 
@@ -21,6 +22,12 @@
 #define CTRL_PROFILE        "profile"
 #define CTRL_CHRONO_SET     CTRL_BASE "/%1/chrono/set"
 #define CTRL_PROFILE_SET    CTRL_BASE "/%1/chrono/profile/set"
+
+/* Home Assistant discovery of the sensors outside the heating (heating=false):
+ * the heated rooms are the AcquaThermoNet climate entities */
+#define HA_STATUS           "homeassistant/status"
+#define HA_DISCOVERY        "homeassistant/sensor/%1/config"
+#define HA_EXPIRE_S         900     /*15 min: silence after which a sensor counts as lost*/
 
 /* Plausibility (0.1 degC): the controller does not range-check */
 #define TEMP_MIN_DC         (-200)  /*-20.0 degC*/
@@ -51,8 +58,9 @@ Mqtt::Mqtt(mqtt_brk_t *mbi, QVector<sensor_t> *sensors, QObject *parent) :
     m_zones.fill(zone_pub_t(), m_sensors->length());
 
     QStringList zones;
+    /* a sensor outside the heating is no zone: no setpoint or chrono command for it */
     for(const sensor_t &s : *m_sensors)
-        zones.append( QString::fromLatin1(s.zone) );
+        zones.append( s.noHeating ? QString() : QString::fromLatin1(s.zone) );
     m_control = new ZoneControl(zones, 1000, 5000, this);
     connect(m_control, &ZoneControl::sendSetPoint, this, &Mqtt::publishSetPoint);
     connect(m_control, &ZoneControl::sendMode, this, &Mqtt::publishMode);
@@ -69,9 +77,9 @@ Mqtt::Mqtt(mqtt_brk_t *mbi, QVector<sensor_t> *sensors, QObject *parent) :
         m_client->setPassword( m_mbi->password );
     }
     /* Unique and stable, must not collide with AcquaThermoNet-... */
-    const QString uniqueId = m_mbi->uniqueId[0] != '\0' ? QString::fromUtf8(m_mbi->uniqueId)
-                                                         : QHostInfo::localHostName();
-    m_client->setClientId( QString(SW_NAME "-%1").arg(uniqueId) );
+    m_uniqueId = m_mbi->uniqueId[0] != '\0' ? QString::fromUtf8(m_mbi->uniqueId)
+                                             : QHostInfo::localHostName();
+    m_client->setClientId( QString(SW_NAME "-%1").arg(m_uniqueId) );
     qCInfo(lcMqtt) << "MQTT client id: " << m_client->clientId();
     m_client->setKeepAlive(30);
 
@@ -346,6 +354,10 @@ void Mqtt::stateChangedSlot()
             if( !m_client->subscribe(QMqttTopicFilter(f)) )
                 qCWarning(lcMqtt) << "Subscription failed:" << f;
         }
+        /* Home Assistant restarted: its discovery again */
+        if( !m_client->subscribe(QMqttTopicFilter(HA_STATUS), 1) )
+            qCWarning(lcMqtt) << "Subscription failed:" << HA_STATUS;
+        publishDiscovery();
         m_control->setConnected(true);
     }
 }
@@ -357,6 +369,15 @@ void Mqtt::stateChangedSlot()
 void Mqtt::messageReceivedSlot(const QByteArray &message, const QMqttTopicName &topic)
 {
     const QString name = topic.name();
+    if( name == HA_STATUS )
+    {
+        if( message == "online" )
+        {
+            qCInfo(lcMqtt) << "Home Assistant online, republish discovery";
+            publishDiscovery();
+        }
+        return;
+    }
     if( name == CTRL_STATUS )
     {
         m_control->onStatus(message);
@@ -384,6 +405,68 @@ void Mqtt::messageReceivedSlot(const QByteArray &message, const QMqttTopicName &
         m_control->onStateMode(levels.at(1), message);
     else if( levels.at(2) == CTRL_CHRONO )
         m_control->onChronoState(levels.at(1), message);
+}
+
+/**
+ * @brief Mqtt::discovery
+ * Home Assistant discovery of a sensor outside the heating: one device,
+ * temperature, humidity and battery from its RoomSense/<zone>/data
+ * @return topic homeassistant/sensor/<uniqueId>_<zone>_<field>/config and
+ *         payload of each entity; none for a heating sensor or one without zone
+ */
+QVector<QPair<QString, QByteArray>> Mqtt::discovery(const QString &uniqueId, const sensor_t &sensor)
+{
+    QVector<QPair<QString, QByteArray>> out;
+    const QString zone = QString::fromLatin1(sensor.zone);
+    if( !sensor.noHeating || zone.isEmpty() )
+        return out;
+
+    struct Field { const char *key; const char *name; const char *unit; bool optional; };
+    static const Field fields[] = {
+        { "temperature", "Temperature", "°C", false },
+        { "humidity",    "Humidity",    "%",  true  },     /*left out of a reading when unknown*/
+        { "battery",     "Battery",     "%",  true  },
+    };
+
+    const QString name = QString::fromUtf8(sensor.name);
+    QJsonObject device;
+    device.insert("name",           QString(SW_NAME " %1").arg(name.isEmpty() ? zone : name));
+    device.insert("model",          SW_NAME);
+    device.insert("manufacturer",   "Luigi Scagnet");
+    device.insert("sw_version",     SW_VER);
+    device.insert("identifiers",    QJsonArray{ uniqueId + "_" + zone });
+
+    for( const Field &f : fields )
+    {
+        const QString id = uniqueId + "_" + zone + "_" + f.key;
+        QJsonObject p;
+        p.insert("name",            f.name);
+        p.insert("uniq_id",         id);
+        p.insert("stat_t",          QString(TOPIC_ZONE).arg(zone));
+        p.insert("val_tpl",         QString(f.optional ? "{{ value_json.%1 | default(none) }}" : "{{ value_json.%1 }}").arg(f.key));
+        p.insert("dev_cla",         f.key);
+        p.insert("unit_of_meas",    QString::fromUtf8(f.unit));
+        p.insert("stat_cla",        "measurement");
+        p.insert("avty_t",          TOPIC_STATUS);
+        p.insert("exp_aft",         HA_EXPIRE_S);
+        p.insert("device",          device);
+        out.append(qMakePair(QString(HA_DISCOVERY).arg(id), QJsonDocument(p).toJson(QJsonDocument::Compact)));
+    }
+    return out;
+}
+
+/**
+ * @brief Mqtt::publishDiscovery
+ * Discovery of the sensors outside the heating, retained, QoS 1. No cleanup
+ * of the ones no longer configured (docs/DOCUMENTATION.md §5.4)
+ */
+void Mqtt::publishDiscovery()
+{
+    if( m_clientState != QMqttClient::Connected )
+        return;
+    for( const sensor_t &s : *m_sensors )
+        for( const auto &m : discovery(m_uniqueId, s) )
+            m_client->publish( QMqttTopicName(m.first), m.second, 1, true );
 }
 
 /**

@@ -76,7 +76,8 @@ MainPage::MainPage(const QVector<sensor_t> &sensors, ZoneControl *control, QWidg
     m_banner = label("offlineBanner", "Heating controller not reachable: setpoints are read only", this);
     m_banner->setWordWrap(true);
 
-    /* one card per sensor, scrolled by touch when they do not fit */
+    /* one card per sensor in the heating, scrolled by touch when they do not
+     * fit; none for a sensor outside it (index kept: m_cards holds nullptr) */
     QWidget *cardsBox = new QWidget;
     cardsBox->setObjectName("cardsBox");
     QVBoxLayout *cards = new QVBoxLayout(cardsBox);
@@ -87,6 +88,11 @@ MainPage::MainPage(const QVector<sensor_t> &sensors, ZoneControl *control, QWidg
         const QString zone = QString::fromLatin1(sensors.at(i).zone);
         const QString name = QString::fromUtf8(sensors.at(i).name);
         m_hasZone.append(!zone.isEmpty());
+        if(sensors.at(i).noHeating)
+        {
+            m_cards.append(nullptr);
+            continue;
+        }
         ZoneCard *card = new ZoneCard(name.isEmpty() ? zone : name, cardsBox);
         connect(card, &ZoneCard::minusClicked, this, [this, i] { m_control->step(i, -1); });
         connect(card, &ZoneCard::plusClicked, this, [this, i] { m_control->step(i, 1); });
@@ -189,7 +195,7 @@ void MainPage::refreshModeButton()
 
 void MainPage::refreshCard(int index)
 {
-    if(index < 0 || index >= m_cards.size())
+    if(index < 0 || index >= m_cards.size() || !m_cards.at(index))
         return;
     ZoneView::input_t in;
     in.hasZone = m_hasZone.at(index);

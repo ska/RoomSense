@@ -38,6 +38,7 @@ public:
     QList<connect_t> connects;
     QList<publish_t> publishes;
     QStringList      subscriptions;
+    QMap<QString, int> subscriptionQos;     /*requested QoS by filter*/
     int              disconnects = 0;
 
     FakeBroker()
@@ -207,6 +208,7 @@ private:
             while(i < body.size())
             {
                 const QString f = QString::fromUtf8(str(body, i));
+                subscriptionQos.insert(f, body.at(i) & 3);
                 i++;                                    /* requested QoS */
                 subscriptions.append(f);
                 m_filters[s].append(f);

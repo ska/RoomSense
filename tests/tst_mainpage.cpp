@@ -67,6 +67,28 @@ private slots:
         QVERIFY(m_page->card(1)->findChild<QPushButton *>("chronoButton")->isHidden());
     }
 
+    void noHeatingNoCard()
+    {
+        QVector<sensor_t> sensors = m_sensors;
+        sensor_t s;
+        memset(&s, 0, sizeof(s));
+        qstrncpy(s.name, "taverna", sizeof(s.name));
+        qstrncpy(s.zone, "taverna", sizeof(s.zone));
+        s.noHeating = true;
+        sensors.insert(1, s);
+        ZoneControl control({ "salotto", "", "camera" });
+        MainPage page(sensors, &control);
+        QCOMPARE(page.findChildren<ZoneCard *>().size(), 2);
+        QVERIFY(page.card(0));
+        QVERIFY(!page.card(1));
+        QVERIFY(page.card(2));
+        sensor_env_t e;
+        memset(&e, 0, sizeof(e));
+        e.temp = 150;
+        page.onReading(1, 0, e);                        /* ignored, no crash */
+        page.refresh();
+    }
+
     void reading()
     {
         QCOMPARE(text(0, "tempLabel"), QString("--.-°"));

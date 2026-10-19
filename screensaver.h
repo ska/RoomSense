@@ -64,6 +64,7 @@ private:
     screensaver_t        m_config;
     QStringList          m_names;
     QVector<bool>        m_hasZone;
+    QVector<bool>        m_noHeating;
     QVector<qint64>      m_lastMs;          /*MonoClock of the last reading, 0 = never*/
     QVector<sensor_env_t> m_last;
     bool                 m_brokerConnected;

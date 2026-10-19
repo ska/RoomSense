@@ -23,7 +23,7 @@ class MainPage : public QWidget
 public:
     MainPage(const QVector<sensor_t> &sensors, ZoneControl *control, QWidget *parent = nullptr);
 
-    ZoneCard *card(int index) const { return m_cards.at(index); }
+    ZoneCard *card(int index) const { return m_cards.at(index); }   /*nullptr outside the heating*/
     /* Close the house popup (the screen saver comes) */
     void closePopup();
 

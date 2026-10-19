@@ -136,7 +136,7 @@ ls dist/</code></pre>
 <div class="table"><table><thead><tr><th>Option</th><th>Effect</th></tr></thead><tbody><tr><td><code>CONFIG+=tests</code></td><td>also build the unit tests (<code>tests/tests</code>)</td></tr><tr><td><code>CONFIG+=package</code></td><td>desktop: make the package zip too</td></tr><tr><td><code>CONFIG+=nopackage</code></td><td>ARM: no package zip</td></tr><tr><td><code>RS_ARM_CPU=&lt;cpu&gt;</code></td><td>ARM: CPU of the panel (default <code>cortex-a9</code>)</td></tr></tbody></table></div>
 <p><code>make install</code>: desktop to <code>/tmp</code>, ARM to <code>/mnt/data/hmi/RoomSense</code> (binary and <code>setting.default.ini</code>; <code>setting.ini</code> is never overwritten).</p>
 <h3 id="24-version">2.4 Version</h3>
-<p>From the latest git tag <code>vX.Y.Z</code> <strong>when qmake runs</strong> (<code>version.pri</code>): <code>3.0.0</code> at the tag, <code>3.0.0-&lt;hash&gt;</code> after it, <code>0.0.0</code> with no tag reachable. The release tags live on the <code>public</code> branch, so a build of <code>master</code> reports <code>0.0.0-&lt;hash&gt;</code>; a release is built from its tag. Rerun <code>qmake -r</code> after a commit or a tag (a plain qmake on the subdirs project keeps the old <code>version.h</code>).</p>
+<p>From the latest git tag <code>vX.Y.Z</code> <strong>when qmake runs</strong> (<code>version.pri</code>): <code>3.1.0</code> at the tag, <code>3.1.0-&lt;hash&gt;</code> after it, <code>0.0.0</code> with no tag reachable. The release tags live on the <code>public</code> branch, so a build of <code>master</code> reports <code>0.0.0-&lt;hash&gt;</code>; a release is built from its tag. Rerun <code>qmake -r</code> after a commit or a tag (a plain qmake on the subdirs project keeps the old <code>version.h</code>).</p>
 </section><section id="3-tests">
 <h2 id="3-tests">3. Tests</h2>
 <p>What each test checks: <a href="TESTING.md"><code>TESTING.md</code></a>.</p>
@@ -167,13 +167,13 @@ dist/RoomSense_Arm32_&lt;version&gt;.debug           not stripped, keep it for c
     --strip arm-poky-linux-gnueabi-strip</code></pre>
 <h3 id="42-release-package">4.2 Release package</h3>
 <p>From the release <strong>tag</strong> (on <code>public</code>), in a clean checkout:</p>
-<pre class="code"><code class="lang-sh">git -C $RS worktree add /tmp/rs-v3.0.0 v3.0.0
-cd /tmp/rs-v3.0.0 &amp;&amp; git submodule update --init
+<pre class="code"><code class="lang-sh">git -C $RS worktree add /tmp/rs-v3.1.0 v3.1.0
+cd /tmp/rs-v3.1.0 &amp;&amp; git submodule update --init
 source /home/devel/Sviluppi/Sdk/1.3.x/environment-setup-cortexa7hf-neon-poky-linux-gnueabi
 mkdir build &amp;&amp; cd build &amp;&amp; qmake -r ../RoomSense.pro &amp;&amp; make -j$(nproc)</code></pre>
 <p>Before installing, check:</p>
-<div class="table"><table><thead><tr><th>Check</th><th>Command</th><th>Expected</th></tr></thead><tbody><tr><td>version</td><td><code>unzip -p dist/*.zip package.info</code></td><td><code>&lt;version&gt;3.0.0&lt;/version&gt;</code>, no hash</td></tr><tr><td>no hardware division</td><td>`objdump -d bin_arm/RoomSense \</td><td>grep -cE '(s\</td><td>u)div'`</td><td><code>0</code></td></tr><tr><td>content</td><td><code>unzip -l dist/*.zip</code></td><td><code>deploy/RoomSense</code>, <code>deploy/hciconfig</code>, <code>deploy/start.sh</code>, <code>deploy/setting.default.ini</code>, the hooks</td></tr><tr><td>checksum</td><td><code>(cd dist &amp;&amp; sha256sum *.zip &gt; RoomSense_Package_Arm32_3.0.0.zip.sha256)</code></td><td>kept with the zip</td></tr></tbody></table></div>
-<p>Then keep the zip with its <code>.debug</code> and remove the worktree (<code>git -C $RS worktree remove /tmp/rs-v3.0.0</code>).</p>
+<div class="table"><table><thead><tr><th>Check</th><th>Command</th><th>Expected</th></tr></thead><tbody><tr><td>version</td><td><code>unzip -p dist/*.zip package.info</code></td><td><code>&lt;version&gt;3.1.0&lt;/version&gt;</code>, no hash</td></tr><tr><td>no hardware division</td><td>`objdump -d bin_arm/RoomSense \</td><td>grep -cE '(s\</td><td>u)div'`</td><td><code>0</code></td></tr><tr><td>content</td><td><code>unzip -l dist/*.zip</code></td><td><code>deploy/RoomSense</code>, <code>deploy/hciconfig</code>, <code>deploy/start.sh</code>, <code>deploy/setting.default.ini</code>, the hooks</td></tr><tr><td>checksum</td><td><code>(cd dist &amp;&amp; sha256sum *.zip &gt; RoomSense_Package_Arm32_3.1.0.zip.sha256)</code></td><td>kept with the zip</td></tr></tbody></table></div>
+<p>Then keep the zip with its <code>.debug</code> and remove the worktree (<code>git -C $RS worktree remove /tmp/rs-v3.1.0</code>).</p>
 <h3 id="43-install">4.3 Install</h3>
 <p>Copy the zip to the house panel and install it from the launcher. An update keeps <code>setting.ini</code> and <code>log/</code>. On a first install the application creates <code>setting.ini</code> from <code>setting.default.ini</code>: edit it (broker, sensor MACs and zones, screen saver, weather) and restart. RoomSense and AcquaThermoNet must be updated together when the interface changes.</p></section>
 </main>
